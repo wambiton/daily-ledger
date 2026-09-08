@@ -1,0 +1,22 @@
+[
+  {
+    "name": "com.personal.ledger.LocalDatabaseTest",
+    "tests": "1",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-09-07T14:12:19",
+    "hostname": "LW-20250519FOUR",
+    "time": "34.612"
+  },
+  {
+    "name": "com.personal.ledger.RulesTest",
+    "tests": "3",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-09-07T14:12:54",
+    "hostname": "LW-20250519FOUR",
+    "time": "0.006"
+  }
+]

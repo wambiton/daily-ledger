@@ -1,0 +1,41 @@
+{
+  "passed": true,
+  "screens": [
+    {
+      "width": 358,
+      "overflow": false,
+      "contentBottom": 797,
+      "height": 878
+    },
+    {
+      "width": 358,
+      "overflow": false,
+      "contentBottom": 661.75,
+      "height": 878
+    },
+    {
+      "width": 358,
+      "overflow": false,
+      "contentBottom": 861,
+      "height": 878
+    },
+    {
+      "width": 358,
+      "overflow": false,
+      "contentBottom": 848.796875,
+      "height": 878
+    },
+    {
+      "width": 358,
+      "overflow": false,
+      "contentBottom": 674.4375,
+      "height": 878
+    },
+    {
+      "width": 358,
+      "overflow": false,
+      "contentBottom": 725.59375,
+      "height": 878
+    }
+  ]
+}

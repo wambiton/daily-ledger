@@ -1,13 +1,23 @@
 [
   {
+    "name": "com.personal.ledger.ActivityLaunchTest",
+    "tests": "1",
+    "skipped": "0",
+    "failures": "0",
+    "errors": "0",
+    "timestamp": "2026-09-08T10:54:14",
+    "hostname": "LW-20250519FOUR",
+    "time": "5.507"
+  },
+  {
     "name": "com.personal.ledger.LocalDatabaseTest",
     "tests": "1",
     "skipped": "0",
     "failures": "0",
     "errors": "0",
-    "timestamp": "2026-09-07T14:12:19",
+    "timestamp": "2026-09-08T10:54:20",
     "hostname": "LW-20250519FOUR",
-    "time": "34.612"
+    "time": "0.428"
   },
   {
     "name": "com.personal.ledger.RulesTest",
@@ -15,7 +25,7 @@
     "skipped": "0",
     "failures": "0",
     "errors": "0",
-    "timestamp": "2026-09-07T14:12:54",
+    "timestamp": "2026-09-08T10:54:20",
     "hostname": "LW-20250519FOUR",
     "time": "0.006"
   }

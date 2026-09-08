@@ -227,7 +227,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
     val today = Rules.today()
     LedgerCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { onMonth(month.minusMonths(1)) }) { Text("‹") }
+            TextButton(onClick = { onMonth(month.minusMonths(1)) }, modifier = Modifier.testTag("previous-month")) { Text("‹") }
             TextButton(onClick = onJump) { Text("${month.year}年${month.monthValue}月") }
             TextButton(onClick = { onMonth(month.plusMonths(1)) }, enabled = month < YearMonth.from(today)) { Text("›") }
         }
@@ -242,7 +242,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
                     val isSelected = value == selected
                     val shape = RoundedCornerShape(10.dp)
                     val decoration = if(isSelected) Modifier.background(MaterialTheme.colorScheme.primary, shape) else if(value == today) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, shape) else Modifier
-                    Column(Modifier.weight(1f).height(40.dp).then(decoration).clickable(enabled = value <= today) { onDate(value) },
+                    Column(Modifier.weight(1f).height(40.dp).then(decoration).testTag("date-$value").clickable(enabled = value <= today) { onDate(value) },
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                         Text(day.toString(), color = if(isSelected) MaterialTheme.colorScheme.onPrimary else if(value > today) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodySmall)
                         if(value.toString() in recorded) Text("•", style = MaterialTheme.typography.labelSmall, color = if(isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)

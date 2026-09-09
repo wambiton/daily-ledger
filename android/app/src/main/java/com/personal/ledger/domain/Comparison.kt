@@ -22,7 +22,24 @@ data class ComparisonResult(val a: Long, val b: Long, val categories: List<Categ
         .divide(BigDecimal.valueOf(b), 1, RoundingMode.HALF_UP).toPlainString()
 }
 
+data class MultiCategory(val id: String, val totals: List<Long>)
+data class MultiComparison(val totals: List<Long>, val categories: List<MultiCategory>)
+
 object Comparison {
+    fun calculateMany(entries: List<Entry>, type: String, periods: List<LedgerPeriod>): MultiComparison {
+        require(type in listOf("expense", "income"))
+        require(periods.size >= 2) { "请至少选择两个周期" }
+        require(periods.map { it.start to it.fullEndExclusive }.distinct().size == periods.size) { "请选择不同的比较周期" }
+        val values = periods.map { linkedMapOf<String, Long>() }
+        entries.filter { it.type == type && it.deletedAt == null }.forEach { entry ->
+            periods.forEachIndexed { index, period ->
+                if(period.contains(entry.date)) values[index][entry.categoryId] = Math.addExact(values[index][entry.categoryId] ?: 0L, entry.amountFen)
+            }
+        }
+        val categories = values.flatMap { it.keys }.distinct().map { id -> MultiCategory(id, values.map { it[id] ?: 0L }) }
+            .sortedWith(compareByDescending<MultiCategory> { it.totals.fold(0L, Math::addExact) }.thenBy { it.id })
+        return MultiComparison(values.map { it.values.fold(0L, Math::addExact) }, categories)
+    }
     fun week(day: LocalDate, today: LocalDate = Rules.today()): LedgerPeriod {
         require(day <= today) { "不能选择未来日期" }
         val start = day.minusDays((day.dayOfWeek.value - 1).toLong())

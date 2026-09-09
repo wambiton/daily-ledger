@@ -8,6 +8,24 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 class ComparisonTest {
+    @Test fun manyMonthsKeepSelectionOrderAndCategoryUnion() {
+        val periods = listOf(9, 1, 3, 6).map { Comparison.month(YearMonth.of(2026,it),today) }
+        val entries = listOf(e("2026-01-02","food",101), e("2026-03-31","bus",202),
+            e("2026-09-09","food",303), e("2026-09-10","food",999),
+            e("2026-06-01","food",777).copy(deletedAt=1), e("2026-03-02","food",404,"income"))
+        val result = Comparison.calculateMany(entries,"expense",periods)
+        assertEquals(listOf(303L,101L,202L,0L),result.totals)
+        assertEquals(listOf(303L,101L,0L,0L),result.categories.first { it.id == "food" }.totals)
+        assertEquals(listOf(0L,0L,202L,0L),result.categories.first { it.id == "bus" }.totals)
+        assertEquals(listOf(0L,0L,404L,0L),Comparison.calculateMany(entries,"income",periods).totals)
+        assertTrue(runCatching { Comparison.calculateMany(entries,"expense",listOf(periods[0])) }.isFailure)
+        assertTrue(runCatching { Comparison.calculateMany(entries,"expense",periods + periods[0]) }.isFailure)
+    }
+    @Test fun manyWeeksRespectMondayBoundaries() {
+        val periods = listOf("2026-09-09","2026-08-31","2026-08-17").map { Comparison.week(LocalDate.parse(it),today) }
+        val entries = listOf(e("2026-09-06","x",100),e("2026-09-07","x",200),e("2026-08-23","x",300),e("2026-08-24","x",999))
+        assertEquals(listOf(200L,100L,300L),Comparison.calculateMany(entries,"expense",periods).totals)
+    }
     private val today = LocalDate.of(2026, 9, 9)
     private fun e(date: String, category: String, amount: Long, type: String = "expense") = Entry("$date-$category-$type", "test", type, category, amount, date, "", 1, 1)
     @Test fun fullWeeksCrossMonthAndYear() {

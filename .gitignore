@@ -22,3 +22,5 @@ android/local.properties
 *.keystore
 reports/*.log
 reports/*.xml
+reports/private/
+reports/P2-device.png

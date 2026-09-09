@@ -69,4 +69,13 @@ class LedgerFlowTest {
         Assert.assertEquals(1234L, entry.amountFen)
         Assert.assertEquals("", entry.note)
     }
+
+    @Test fun duplicateCategoryErrorRemainsVisibleInDialog() {
+        ui.onNodeWithTag("new-entry").performClick()
+        ui.onNodeWithText("＋ 新建分类").performClick()
+        ui.onNodeWithText("分类名称").performTextInput("餐饮")
+        ui.onNodeWithText("添加").performClick()
+        ui.waitUntil(10000) { !vm.busy.value }
+        ui.onNodeWithText("此分类已存在，请换一个名称").assertIsDisplayed()
+    }
 }

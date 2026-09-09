@@ -49,6 +49,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
     var deleteConfirm by rememberSaveable { mutableStateOf(false) }
     var newCategory by rememberSaveable { mutableStateOf(false) }
     var categoryName by rememberSaveable { mutableStateOf("") }
+    var categoryError by rememberSaveable { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val today = Rules.today()
@@ -75,7 +76,10 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
         }
     }
     BackHandler(enabled = route != "home") { leave() }
-    LaunchedEffect(error) { error?.let { snackbar.showSnackbar(it); vm.error.value = null } }
+    LaunchedEffect(error) { error?.let {
+        if(newCategory) categoryError = it else snackbar.showSnackbar(it)
+        vm.error.value = null
+    } }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -133,7 +137,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
                             repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
-                    OutlinedButton(onClick = { categoryName = ""; newCategory = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("＋ 新建分类") }
+                    OutlinedButton(onClick = { categoryName = ""; categoryError = null; newCategory = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("＋ 新建分类") }
                     Spacer(Modifier.height(24.dp))
                 }
                 "form" -> {
@@ -176,7 +180,8 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
         confirmButton = { TextButton(enabled = !busy, onClick = { detailId?.let { vm.delete(it) { deleteConfirm = false; route = "home" } } }) { Text("删除") } },
         dismissButton = { TextButton(enabled = !busy, onClick = { deleteConfirm = false }) { Text("取消") } })
     if(newCategory) AlertDialog(onDismissRequest = { if(!busy) newCategory = false }, title = { Text("新建${if(type == "expense") "支出" else "收入"}分类") },
-        text = { OutlinedTextField(categoryName, { categoryName = it }, label = { Text("分类名称") }, singleLine = true, enabled = !busy) },
+        text = { OutlinedTextField(categoryName, { categoryName = it; categoryError = null }, label = { Text("分类名称") }, singleLine = true, enabled = !busy,
+            isError = categoryError != null, supportingText = { categoryError?.let { Text(it) } }) },
         confirmButton = { TextButton(enabled = !busy && categoryName.isNotBlank(), onClick = { vm.addCategory(type, categoryName) {
             newCategory = false; if(route == "choose") { categoryId = it.id; dirty = true; route = "form"; categoryReturn = false }
         } }) { Text("添加") } }, dismissButton = { TextButton(enabled = !busy, onClick = { newCategory = false }) { Text("取消") } })

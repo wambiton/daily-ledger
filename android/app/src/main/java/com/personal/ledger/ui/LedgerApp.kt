@@ -9,6 +9,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +55,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val today = Rules.today()
     val byId = remember(categories) { categories.associateBy { it.id } }
+    val screenState = rememberSaveableStateHolder()
 
     fun chooseDate(initial: String, complete: (LocalDate) -> Unit) {
         val d = LocalDate.parse(initial)
@@ -85,14 +87,15 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(
-            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; else -> if(tab == 0) "账本" else "我的" }, fontWeight = FontWeight.Bold) },
+            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
             navigationIcon = { if(route != "home") TextButton(onClick = { leave() }, enabled = !busy) { Text("返回") } },
             actions = { if(route == "home" && tab == 0) Text("本地保存", modifier = Modifier.padding(end = 20.dp), style = MaterialTheme.typography.labelMedium) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
         ) },
         bottomBar = { if(route == "home") NavigationBar {
             NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Text("▤") }, label = { Text("账本") })
-            NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Text("○") }, label = { Text("我的") })
+            NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Text("▥") }, label = { Text("比较") })
+            NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Text("○") }, label = { Text("我的") })
         } },
         floatingActionButton = { if(route == "home" && tab == 0 && ready) ExtendedFloatingActionButton(
             onClick = { beginNew(today.toString()) }, modifier = Modifier.testTag("new-entry")) { Text("＋ 记一笔") } },
@@ -116,6 +119,10 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
                         OutlinedButton(onClick = { beginNew(selectedDate) }, modifier = Modifier.fillMaxWidth()) { Text("补记这一天") }
                     }
                     Spacer(Modifier.height(90.dp))
+                } else if(tab == 1) {
+                    screenState.SaveableStateProvider("comparison") {
+                        ComparisonScreen(entries, categories) { detailId = it.id; route = "detail" }
+                    }
                 } else {
                     LedgerCard {
                         Text("个人账本", style = MaterialTheme.typography.titleLarge)

@@ -51,3 +51,24 @@ class AppliedOperation(models.Model):
     result = models.JSONField()
     class Meta:
         constraints = [models.UniqueConstraint(fields=['user','operation_id'],name='unique_operation')]
+
+class EmailChallenge(models.Model):
+    email = models.EmailField()
+    purpose = models.CharField(max_length=8, choices=[('register', '注册'), ('reset', '重置')])
+    code_digest = models.CharField(max_length=64)
+    expires_at = models.DateTimeField()
+    sent_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    consumed_at = models.DateTimeField(null=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['email', 'purpose'], name='unique_email_challenge')]
+
+class AuthSession(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    access_digest = models.CharField(max_length=64, unique=True)
+    refresh_digest = models.CharField(max_length=64, unique=True)
+    access_expires_at = models.DateTimeField()
+    refresh_expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True)

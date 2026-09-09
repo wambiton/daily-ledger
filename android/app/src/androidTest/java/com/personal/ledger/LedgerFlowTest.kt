@@ -78,4 +78,26 @@ class LedgerFlowTest {
         ui.waitUntil(10000) { !vm.busy.value }
         ui.onNodeWithText("此分类已存在，请换一个名称").assertIsDisplayed()
     }
+
+    @Test fun selectingHistoricalDateRevealsItsBillsAndCanReturnToToday() {
+        val past = YearMonth.from(Rules.today()).minusMonths(1).atDay(15)
+        ui.waitUntil(10000) { vm.categories.value.isNotEmpty() }
+        ui.runOnIdle {
+            vm.save(null, "expense", vm.categories.value.first { it.type == "expense" }.id,
+                "23.45", past.toString(), "history-visible-test") { }
+        }
+        ui.waitUntil(10000) { vm.entries.value.any { it.note == "history-visible-test" } }
+        ui.onNodeWithTag("previous-month").performScrollTo().performClick()
+        ui.onNodeWithTag("date-$past").performScrollTo().performClick()
+        ui.waitForIdle()
+        // No performScrollTo: selecting a date must reveal its result automatically.
+        ui.onNodeWithText("history-visible-test").assertIsDisplayed().performClick()
+        ui.onNodeWithText("日期：$past").assertIsDisplayed()
+        ui.onNodeWithText("−¥23.45").assertIsDisplayed()
+        ui.onNodeWithText("返回").performClick()
+        ui.onNodeWithText("回到今天").performScrollTo().performClick()
+        ui.waitForIdle()
+        ui.onNodeWithText("今天 · ${Rules.today().monthValue}月${Rules.today().dayOfMonth}日").assertIsDisplayed()
+        ui.onNodeWithText("history-visible-test").assertDoesNotExist()
+    }
 }

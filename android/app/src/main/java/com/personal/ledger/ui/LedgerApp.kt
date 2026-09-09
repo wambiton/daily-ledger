@@ -4,6 +4,8 @@ import android.app.DatePickerDialog
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
@@ -108,14 +110,14 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
             } else when(route) {
                 "home" -> if(tab == 0) {
                     DayCard("今天 · ${today.monthValue}月${today.dayOfMonth}日", entries.filter { it.date == today.toString() }, byId,
-                        onEntry = { detailId = it.id; route = "detail" }, compact = true)
+                        onEntry = { detailId = it.id; route = "detail" }, compact = true, reveal = selectedDate == today.toString())
                     CalendarCard(YearMonth.parse(monthText), LocalDate.parse(selectedDate), entries.map { it.date }.toSet(),
                         onMonth = { monthText = it.toString() },
                         onJump = { chooseDate(selectedDate) { selectedDate = it.toString(); monthText = YearMonth.from(it).toString() } },
                         onDate = { selectedDate = it.toString() })
                     TextButton(onClick = { selectedDate = today.toString(); monthText = YearMonth.from(today).toString() }) { Text("回到今天") }
                     if(selectedDate != today.toString()) {
-                        DayCard(selectedDate, entries.filter { it.date == selectedDate }, byId, onEntry = { detailId = it.id; route = "detail" })
+                        DayCard(selectedDate, entries.filter { it.date == selectedDate }, byId, onEntry = { detailId = it.id; route = "detail" }, reveal = true)
                         OutlinedButton(onClick = { beginNew(selectedDate) }, modifier = Modifier.fillMaxWidth()) { Text("补记这一天") }
                     }
                     Spacer(Modifier.height(90.dp))
@@ -202,15 +204,23 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
     }
 }
 
-@Composable private fun LedgerCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
+@Composable private fun LedgerCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Card(modifier = modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
     }
 }
 
-@Composable private fun DayCard(title: String, entries: List<Entry>, categories: Map<String, Category>, onEntry: (Entry) -> Unit, compact: Boolean = false) {
+@OptIn(ExperimentalFoundationApi::class)
+@Composable private fun DayCard(title: String, entries: List<Entry>, categories: Map<String, Category>, onEntry: (Entry) -> Unit, compact: Boolean = false, reveal: Boolean = false) {
     var expanded by rememberSaveable(title) { mutableStateOf(false) }
-    LedgerCard {
+    val requester = remember { BringIntoViewRequester() }
+    LaunchedEffect(title, reveal) {
+        if (reveal) {
+            withFrameNanos { }
+            requester.bringIntoView()
+        }
+    }
+    LedgerCard(Modifier.bringIntoViewRequester(requester)) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             listOf("income" to "收入", "expense" to "支出").forEach { (type, label) ->

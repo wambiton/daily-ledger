@@ -11,9 +11,10 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
-class LedgerViewModel @JvmOverloads constructor(application: Application, databaseName: String = "ledger.db") : AndroidViewModel(application) {
-    private val db = Room.databaseBuilder(application, LedgerDatabase::class.java, databaseName).build()
-    private val repo = LedgerRepository(db, "local-preview")
+class LedgerViewModel @JvmOverloads constructor(application: Application, private val databaseName: String = "ledger.db", val owner: String = "local-preview") : AndroidViewModel(application) {
+    private val db = LedgerDatabases.acquire(application, databaseName)
+    private val repo = LedgerRepository(db, owner)
+    val pending = repo.pendingCount.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val categories = repo.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val entries = repo.entries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val ready = MutableStateFlow(false)
@@ -21,7 +22,7 @@ class LedgerViewModel @JvmOverloads constructor(application: Application, databa
     val error = MutableStateFlow<String?>(null)
 
     init { initialize() }
-    override fun onCleared() { db.close() }
+    override fun onCleared() { LedgerDatabases.release(databaseName) }
     fun initialize() = runAction {
         repo.seedDefaults()
         ready.value = true

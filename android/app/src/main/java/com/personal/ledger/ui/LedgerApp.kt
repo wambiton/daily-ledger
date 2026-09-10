@@ -29,11 +29,12 @@ import java.time.YearMonth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LedgerApp(vm: LedgerViewModel = viewModel()) {
+fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, accountContent: (@Composable () -> Unit)? = null) {
     val categories by vm.categories.collectAsStateWithLifecycle()
     val entries by vm.entries.collectAsStateWithLifecycle()
     val ready by vm.ready.collectAsStateWithLifecycle()
-    val busy by vm.busy.collectAsStateWithLifecycle()
+    val localBusy by vm.busy.collectAsStateWithLifecycle()
+    val busy = localBusy || externalBusy
     val error by vm.error.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var route by rememberSaveable { mutableStateOf("home") }
@@ -126,10 +127,14 @@ fun LedgerApp(vm: LedgerViewModel = viewModel()) {
                         ComparisonScreen(entries, categories) { detailId = it.id; route = "detail" }
                     }
                 } else {
-                    LedgerCard {
-                        Text("个人账本", style = MaterialTheme.typography.titleLarge)
-                        Text("本地预览版 · 暂未启用云端备份", style = MaterialTheme.typography.bodyMedium)
-                        Text("账目保存在这台手机。请勿卸载应用或清除应用数据。", style = MaterialTheme.typography.bodySmall)
+                    if(accountContent != null) {
+                        accountContent()
+                    } else {
+                        LedgerCard {
+                            Text("个人账本", style = MaterialTheme.typography.titleLarge)
+                            Text("本地预览版 · 暂未启用云端备份", style = MaterialTheme.typography.bodyMedium)
+                            Text("账目保存在这台手机。请勿卸载应用或清除应用数据。", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                     OutlinedButton(onClick = { type = "expense"; route = "manage" }, modifier = Modifier.fillMaxWidth()) { Text("分类管理") }
                 }

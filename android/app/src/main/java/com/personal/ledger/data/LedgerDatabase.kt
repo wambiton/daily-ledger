@@ -47,6 +47,14 @@ data class SyncState(@PrimaryKey val owner: String, val cursor: Long = 0, val la
 
 @Dao
 interface LedgerDao {
+    @Query("SELECT * FROM categories WHERE owner = :owner ORDER BY rowid") suspend fun categorySnapshot(owner: String): List<Category>
+    @Query("SELECT * FROM entries WHERE owner = :owner AND deletedAt IS NULL ORDER BY createdAt, id") suspend fun entrySnapshot(owner: String): List<Entry>
+    @Query("SELECT * FROM sync_state WHERE owner = :owner") suspend fun backupState(owner: String): SyncState?
+    @Upsert suspend fun setBackupState(state: SyncState)
+    @Query("DELETE FROM entries WHERE owner = :owner") suspend fun clearEntries(owner: String)
+    @Query("DELETE FROM categories WHERE owner = :owner") suspend fun clearCategories(owner: String)
+    @Query("DELETE FROM outbox WHERE owner = :owner") suspend fun clearOutbox(owner: String)
+    @Query("DELETE FROM outbox WHERE owner = :owner AND id IN (:ids)") suspend fun acknowledge(owner: String, ids: List<String>)
     @Query("SELECT * FROM categories WHERE owner = :owner ORDER BY rowid")
     fun categories(owner: String): Flow<List<Category>>
     @Query("SELECT * FROM entries WHERE owner = :owner AND deletedAt IS NULL ORDER BY createdAt DESC, id DESC")

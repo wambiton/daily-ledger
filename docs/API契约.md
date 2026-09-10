@@ -1,26 +1,25 @@
-# API 契约 v1
+# API 契约 v1（2026-09-10手动备份版）
 
-基路径 `/api/v1/`，JSON UTF-8；金额 `amount_fen` 为整数。统一错误形态为 `error.code`、`error.message`、可选 `error.fields`。所有账号数据由 Authorization 会话鉴权后确定。
+基路径 `/api/v1/`，JSON UTF-8；金额为整数分。错误形态为 `error.code`、`error.message`。账号由Bearer会话确定，不接收客户端指定的所属用户。
 
 | 方法及路径 | 请求 | 成功结果 |
 | --- | --- | --- |
-| GET health/ | 无 | status、数据库探测结果 |
+| GET health/ | 无 | status、database |
 | POST auth/code/ | email、purpose（register/reset） | 202、retry_after |
-| POST auth/register/ | username、email、code、password | 201、user、access_token、refresh_token |
-| POST auth/login/ | username、password | 200、user、access_token、refresh_token |
-| POST auth/refresh/ | refresh_token | 200、新令牌 |
+| POST auth/register/ | email、code、password | 201、user、access_token、refresh_token |
+| POST auth/login/ | email、password | user、access_token、refresh_token |
+| POST auth/refresh/ | refresh_token | 新令牌，旧令牌失效 |
 | POST auth/logout/ | refresh_token | 204 |
-| POST auth/reset/ | email、code、password | 200 |
-| GET auth/me/ | Bearer 会话 | 200、本人资料 |
-| POST sync/push/ | operations 数组 | 200、逐条 applied/conflict/rejected 结果 |
-| GET sync/pull/ | cursor、limit | 200、changes、cursor、has_more |
+| POST auth/reset/ | email、code、password | status；撤销旧会话 |
+| GET auth/me/ | Bearer | user |
+| POST backup/ | operation_id、base_revision、payload；Bearer | revision、created_at、entry_count、sha256 |
+| GET backup/latest/ | Bearer | 最新备份信息；无备份revision=0 |
+| GET backup/download/ | Bearer | 最新备份信息及payload；无备份404 |
 
-同步操作包含 operation_id、entity_type（category/entry）、entity_id、base_version、action（upsert/delete）、payload。同一操作重试返回相同结果；同一操作 ID 更换载荷应拒绝。version 为服务端整数，客户端时间不能覆盖版本检查。
+payload包含format_version=1、categories、entries。分类字段：id、type、name、default_key。有效账目字段：id、type、category_id、amount_fen、date（YYYY-MM-DD）、note、created_at、updated_at（Unix毫秒）。不上传其他账号信息或手机令牌。最大20MB、2000分类、50000账目。
 
-账目载荷：type（expense/income）、category_id、amount_fen、entry_date（YYYY-MM-DD）、note。分类载荷：type、name、default_key（仅服务端默认类别）。日期时间元数据由服务端记录，所属日期由用户提供并验证。
+每次上传形成不可变完整快照。base_revision必须等于当前账号电脑版本；否则409 backup_conflict，不覆盖。相同operation_id和内容重试返回原结果；不同内容复用ID返回409。客户端保留上传中的完整请求供失败重试，不伪造备份成功时间。
 
-常规状态码：400 无效输入、401 无会话或会话过期、403 无权限、409 唯一性或版本冲突、429 限频、503 服务暂不可用。批量接口的单项错误放在结果中，失败项不影响已确认成功项。
+恢复以单份快照事务替换该账号数据，有用户确认并保留手机旧副本；不自动合并其他设备未上传修改。旧的sync/push与sync/pull设计暂缓，未提供这些路由，不宣称自动同步可用。
 
-首次恢复先使用 cursor=0 完整重放按序变更；首版保留全部变更和删除标记，直到形成经过测试的快照/日志压缩协议。恢复每页与游标原子落库。该方案取代早期分页快照建议，避免未实现一致性快照却声称安全恢复。
-
-认证及同步接口在 P4 实现；P1 仅实现健康检查和模型，不提供假成功响应。
+常规状态码：400无效输入，401登录失效，404无备份，409版本/唯一性冲突，429限频，503电脑或邮件服务不可用。未配置SMTP时验证码请求返回503，不返回虚假成功。登录令牌不记录日志，响应不缓存。

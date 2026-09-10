@@ -72,3 +72,23 @@ class AuthSession(models.Model):
     refresh_expires_at = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)
     revoked_at = models.DateTimeField(null=True)
+
+class RateBucket(models.Model):
+    key = models.CharField(max_length=64, primary_key=True)
+    count = models.PositiveIntegerField(default=0)
+
+class BackupHead(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, primary_key=True)
+    revision = models.PositiveBigIntegerField(default=0)
+
+class BackupSnapshot(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    operation_id = models.UUIDField()
+    revision = models.PositiveBigIntegerField()
+    digest = models.CharField(max_length=64)
+    payload = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['user', 'operation_id'], name='unique_backup_operation'),
+                       models.UniqueConstraint(fields=['user', 'revision'], name='unique_backup_revision')]

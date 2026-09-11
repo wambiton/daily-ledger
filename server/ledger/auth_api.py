@@ -1,6 +1,8 @@
 import hmac
 import secrets
 import uuid
+import smtplib
+import ssl
 from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.hashers import make_password, check_password
@@ -58,6 +60,12 @@ def code(request, data):
                             settings.DEFAULT_FROM_EMAIL, [email], fail_silently=False)
             if sent != 1:
                 raise RuntimeError('not accepted')
+        except smtplib.SMTPAuthenticationError:
+            raise ApiError('QQ邮箱认证被拒绝。请在电脑检查发信邮箱是否开启SMTP服务，并重新保存对应的授权码后重启备份服务', 503, 'mail_auth_failed') from None
+        except smtplib.SMTPServerDisconnected:
+            raise ApiError('邮箱服务器中断连接。请检查电脑上的SMTP配置及邮箱服务状态，稍后再试', 503, 'mail_disconnected') from None
+        except (TimeoutError, ConnectionError, ssl.SSLError):
+            raise ApiError('电脑连接邮箱服务器失败，请检查网络后重试', 503, 'mail_connection_failed') from None
         except Exception:
             raise ApiError('验证码发送失败，请稍后重试', 503, 'mail_unavailable') from None
     return JsonResponse({'retry_after': 60}, status=202)

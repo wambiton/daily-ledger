@@ -2,6 +2,7 @@ import copy
 import json
 import re
 import uuid
+import smtplib
 from datetime import timedelta
 from unittest.mock import patch
 from django.core import mail
@@ -74,6 +75,16 @@ class AccountBackupTests(TestCase):
         with self.settings(LEDGER_MAIL_READY=False):
             self.assertEqual(self.post('auth/code/', {'email': '123456@qq.com', 'purpose': 'register'}).status_code, 503)
 
+    def test_mail_errors_are_actionable_and_do_not_expose_server_details(self):
+        for error, expected in [(smtplib.SMTPAuthenticationError(535, b'sensitive-server-detail'), 'mail_auth_failed'),
+                                (smtplib.SMTPServerDisconnected('sensitive-server-detail'), 'mail_disconnected'),
+                                (TimeoutError('sensitive-server-detail'), 'mail_connection_failed')]:
+            with patch('ledger.auth_api.send_mail', side_effect=error):
+                result = self.post('auth/code/', {'email': 'diagnostic@qq.com', 'purpose': 'register'})
+                self.assertEqual(result.status_code, 503)
+                self.assertEqual(result.json()['error']['code'], expected)
+                self.assertNotIn('sensitive-server-detail', result.content.decode())
+                self.assertFalse(EmailChallenge.objects.filter(email='diagnostic@qq.com').exists())
     def test_reset_revokes_existing_sessions(self):
         account = self.account()
         code = self.code(purpose='reset')

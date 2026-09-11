@@ -61,7 +61,7 @@ fun AccountScreen(vm: BackupViewModel) {
             }
             OutlinedTextField(email, { email = it }, label = { Text("QQ邮箱") }, singleLine = true, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().testTag("account-email"))
-            OutlinedTextField(password, { password = it }, label = { Text(if(mode == "reset") "新密码（12—128位）" else "密码（12—128位）") },
+            OutlinedTextField(password, { password = it }, label = { Text(if(mode == "reset") "新密码（至少8位）" else "密码（至少8位）") },
                 visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().testTag("account-password"))
             if(mode != "login") {
@@ -69,7 +69,7 @@ fun AccountScreen(vm: BackupViewModel) {
                     modifier = Modifier.fillMaxWidth().testTag("account-code"))
                 OutlinedButton(onClick = { vm.sendCode(address, email, if(mode == "register") "register" else "reset") }, enabled = !busy) { Text("发送验证码") }
             }
-            Button(onClick = { vm.signIn(address, email, password, code, mode); password = ""; code = "" }, enabled = !busy,
+            Button(onClick = { vm.signIn(address, email, password, code, mode) { password = ""; code = "" } }, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().testTag("account-submit")) { Text(when(mode) { "register" -> "注册并登录"; "reset" -> "重置密码"; else -> "登录账号" }) }
             Text("登录后使用独立账号账本。现有未登录账目仍保留，可登录后手动导入。", style = MaterialTheme.typography.bodySmall)
         } else {

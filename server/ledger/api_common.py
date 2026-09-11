@@ -5,6 +5,7 @@ from django.http import JsonResponse, HttpResponse
 from django.core.exceptions import RequestDataTooBig
 from django.views.decorators.csrf import csrf_exempt
 from . import sessions
+from .auth_rules import AuthInputError
 
 
 class ApiError(Exception):
@@ -35,6 +36,8 @@ def endpoint(method, authenticated=False):
                         raise ApiError('请求格式错误')
                 result = fn(request, data)
                 response = result if isinstance(result, HttpResponse) else JsonResponse(result)
+            except AuthInputError as error:
+                response = JsonResponse({'error': {'code': 'invalid', 'message': str(error)}}, status=400)
             except ApiError as error:
                 response = JsonResponse({'error': {'code': error.code, 'message': error.message}}, status=error.status)
             except (ValueError, TypeError, KeyError, RequestDataTooBig):

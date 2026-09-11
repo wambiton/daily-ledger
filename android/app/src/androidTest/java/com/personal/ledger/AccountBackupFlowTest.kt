@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.ViewModelStore
@@ -34,7 +35,12 @@ class AccountBackupFlowTest {
             ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AccountScreen(vm) } } }
             ui.onNodeWithTag("server-address").performTextInput("http://127.0.0.1:8767")
             ui.onNodeWithTag("account-email").performTextInput(args.getString("backup_email")!!)
-            ui.onNodeWithTag("account-password").performTextInput("device-test-password-123")
+            ui.onNodeWithTag("account-password").performTextInput("1234567")
+            ui.onNodeWithTag("account-submit").performScrollTo().performClick()
+            ui.waitForIdle()
+            ui.onNodeWithTag("account-message").assertTextContains("密码至少需要8个字符，不限制字符类型")
+            assertEquals(7,ui.onNodeWithTag("account-password").fetchSemanticsNode().config[SemanticsProperties.EditableText].text.length)
+            ui.onNodeWithTag("account-password").performScrollTo().performTextReplacement("12345678")
             ui.onNodeWithTag("account-submit").performScrollTo().performClick()
             ui.waitUntil(30000) { !vm.busy.value }
             assertNotNull(vm.message.value,vm.account.value)

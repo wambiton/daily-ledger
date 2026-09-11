@@ -18,9 +18,11 @@ class AuthRulesTests(SimpleTestCase):
     def test_password_is_not_modified(self):
         value = '  密码pass123456  '
         self.assertEqual(rules.password(value), value)
-        for value in ['x' * 11, 'x' * 129, None]:
+        for value in ['x' * 7, None]:
             with self.assertRaises(ValueError):
                 rules.password(value)
+        for value in ['12345678', 'abcdefgh', '!@#$%^&*', '中文密码可以使用', '😀' * 8, 'x' * 129]:
+            self.assertEqual(rules.password(value), value)
 
     def test_credentials_are_not_stored_as_plaintext(self):
         token = rules.new_token()

@@ -9,29 +9,33 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
 
+class AuthInputError(ValueError):
+    """Safe, user-facing input validation message."""
+
+
 def username(value):
     if not isinstance(value, str) or not re.fullmatch(r'[a-zA-Z0-9_]{4,32}', value):
-        raise ValueError('用户名须为4至32位字母、数字或下划线')
+        raise AuthInputError('用户名须为4至32位字母、数字或下划线')
     return value.lower()
 
 
 def qq_email(value):
     if not isinstance(value, str):
-        raise ValueError('请输入QQ邮箱')
+        raise AuthInputError('请输入QQ邮箱')
     value = value.strip().lower()
     try:
         validate_email(value)
     except ValidationError:
-        raise ValueError('请输入有效的QQ邮箱') from None
+        raise AuthInputError('请输入有效的QQ邮箱') from None
     if value.rsplit('@', 1)[-1] != 'qq.com':
-        raise ValueError('第一代仅支持QQ邮箱')
+        raise AuthInputError('第一代仅支持QQ邮箱')
     return value
 
 
 def password(value):
     # Preserve spaces and Unicode; never silently trim a password.
-    if not isinstance(value, str) or not 12 <= len(value) <= 128:
-        raise ValueError('密码须为12至128个字符')
+    if not isinstance(value, str) or len(value) < 8:
+        raise AuthInputError('密码至少需要8个字符')
     return value
 
 

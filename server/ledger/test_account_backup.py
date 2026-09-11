@@ -17,6 +17,17 @@ from . import sessions
 class AccountBackupTests(TestCase):
     password = 'test-password-123'
 
+    def test_eight_character_password_registration_login_and_reset(self):
+        self.password = '12345678'
+        self.account()
+        self.assertEqual(self.post('auth/login/', {'email': '123456@qq.com', 'password': self.password}).status_code, 200)
+        invalid = self.post('auth/register/', {'email': 'another@qq.com', 'password': '1234567', 'code': '123456'})
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(invalid.json()['error']['message'], '密码至少需要8个字符')
+        reset = self.post('auth/reset/', {'email': '123456@qq.com', 'password': 'abcdefgh', 'code': self.code(purpose='reset')})
+        self.assertEqual(reset.status_code, 200)
+        self.assertEqual(self.post('auth/login/', {'email': '123456@qq.com', 'password': 'abcdefgh'}).status_code, 200)
+
     def post(self, path, data, token=None):
         return self.client.post('/api/v1/' + path, json.dumps(data), content_type='application/json',
                                 **({'HTTP_AUTHORIZATION': 'Bearer ' + token} if token else {}))

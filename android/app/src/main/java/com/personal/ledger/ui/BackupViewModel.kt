@@ -47,8 +47,10 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         client(address).call("auth/code/", JSONObject().put("email", email).put("purpose", purpose))
         message.value = "验证码已发送，10分钟内有效；60秒后可重新发送"
     }
-    fun signIn(address: String, email: String, password: String, code: String, mode: String) = run {
+    fun signIn(address: String, email: String, password: String, code: String, mode: String, complete: () -> Unit = {}) = run {
         require(mode in listOf("login", "register", "reset"))
+        require(password.codePointCount(0, password.length) >= 8) { "密码至少需要8个字符，不限制字符类型" }
+        if(mode != "login") require(code.matches(Regex("[0-9]{6}"))) { "请输入邮箱收到的6位验证码" }
         val client = client(address)
         val result = client.call("auth/$mode/", JSONObject().put("email", email).put("password", password).put("code", code))
         if(mode == "reset") message.value = "密码已重置，请使用新密码登录"
@@ -58,6 +60,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             lastBackup.value = "请点击查看电脑备份"
             message.value = "登录成功。原本机账本保留，可手动导入当前账号"
         }
+        complete()
     }
     private suspend fun authorized(path: String, body: JSONObject? = null): JSONObject {
         val a = requireNotNull(account.value) { "请先登录" }

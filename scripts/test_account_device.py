@@ -26,7 +26,7 @@ def main():
         from ledger.models import User
         call_command('migrate', verbosity=0)
         email = 'device-' + uuid.uuid4().hex + '@qq.com'
-        User.objects.create_user(username=uuid.uuid4().hex, email=email, password='device-test-password-123', verified_at=timezone.now())
+        User.objects.create_user(username=uuid.uuid4().hex, email=email, password='12345678', verified_at=timezone.now())
         connections.close_all()
         class Handler(WSGIRequestHandler):
             def log_message(self, *args):

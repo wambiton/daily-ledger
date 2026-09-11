@@ -4,6 +4,9 @@ Add-Type -AssemblyName System.Windows.Forms
 $root = Split-Path $PSScriptRoot -Parent
 $folder = Join-Path $root '电脑账目备份/账号服务'
 New-Item -ItemType Directory -Path $folder -Force | Out-Null
+if (-not $Email -and (Test-Path -LiteralPath (Join-Path $folder 'mail-config.json'))) {
+    $Email = (Get-Content -LiteralPath (Join-Path $folder 'mail-config.json') -Raw -Encoding UTF8 | ConvertFrom-Json).email
+}
 $form = New-Object Windows.Forms.Form
 $form.Text = 'QQ邮箱 SMTP 配置'
 $form.Width = 480; $form.Height = 260; $form.StartPosition = 'CenterScreen'

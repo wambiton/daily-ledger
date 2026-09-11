@@ -48,7 +48,7 @@ def main():
                 'com.personal.ledger.test/androidx.test.runner.AndroidJUnitRunner'],capture_output=True,timeout=240)
             output = result.stdout.decode('utf-8',errors='replace')
             print(output)
-            if result.returncode or 'OK (11 tests)' not in output or 'FAILURES' in output:
+            if result.returncode or 'OK (12 tests)' not in output or 'FAILURES' in output:
                 raise RuntimeError('Device suite failed')
         finally:
             subprocess.run([adb,'-s',serial,'reverse','--remove','tcp:8767'],capture_output=True)

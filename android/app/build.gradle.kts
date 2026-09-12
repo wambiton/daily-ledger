@@ -11,8 +11,8 @@ android {
         applicationId = "com.personal.ledger"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.4.0-manual-backup"
+        versionCode = 6
+        versionName = "0.5.0-pc-backup"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -31,6 +31,8 @@ android {
 }
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 dependencies {
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.material3:material3")

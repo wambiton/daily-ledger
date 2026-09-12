@@ -14,6 +14,8 @@ import java.io.File
 class BackupViewModel @JvmOverloads constructor(application: Application, private val vaultName: String = "account", private val localDatabaseName: String = "ledger.db"): AndroidViewModel(application) {
     private val app = application
     private val vault = AccountVault(app, vaultName)
+    private val pairVault = AccountVault(app, "$vaultName-pair")
+    private val carryVault = AccountVault(app, "$vaultName-carry")
     val account = MutableStateFlow<JSONObject?>(null)
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow("")
@@ -36,7 +38,26 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             } }
         } catch(_: Exception) { message.value = "登录凭据无法读取，请重新登录；本地账目仍保留" }
     }
-    fun databaseName(a: JSONObject) = "account-${AccountVault.databaseKey(a.getString("server"), a.getJSONObject("user").getString("id"))}.db"
+    fun databaseName(a: JSONObject) = ComputerPair.databaseName(a)
+    fun pairComputer(contents: String) = run {
+        val candidate = ComputerPair.parse(contents)
+        val verified = ComputerPair.client(candidate).call("computer/")
+        require(verified.getString("computer_id") == candidate.getString("computer_id")) { "电脑身份不匹配，请重新扫码" }
+        val old = account.value
+        if(old != null && old.optString("computer_id") == candidate.getString("computer_id")) {
+            val updated = JSONObject(old.toString()).put("database_name",databaseName(old))
+                .put("server",candidate.getString("server")).put("pair_key",candidate.getString("pair_key"))
+            saveAccount(updated)
+            message.value = "电脑连接地址已更新，原账号和账目保留"
+        } else {
+            if(old != null) carryVault.write(JSONObject().put("database",databaseName(old)).put("owner",owner(old)))
+            vault.clear(); account.value = null
+            message.value = "电脑已配对，请登录或注册。新电脑注册时会带入手机当前账目"
+        }
+        pairVault.write(candidate)
+        server.value = candidate.getString("server")
+        app.getSharedPreferences("backup-settings-$vaultName",0).edit().putString("server",server.value).apply()
+    }
     private fun owner(a: JSONObject) = a.getJSONObject("user").getString("id")
     private fun saveAccount(a: JSONObject) { vault.write(a); account.value = a }
     private fun run(block: suspend () -> Unit) {
@@ -69,7 +90,9 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         }
     }
     private fun client(address: String): BackupClient {
-        val client = BackupClient(address)
+        val normalized = BackupClient.normalize(address)
+        val paired = pairVault.read()?.takeIf { it.getString("server") == normalized }
+        val client = BackupClient(normalized, paired?.getString("pair_key"))
         server.value = client.base
         app.getSharedPreferences("backup-settings-$vaultName", 0).edit().putString("server", client.base).apply()
         return client
@@ -90,6 +113,11 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         if(mode == "reset") message.value = "密码已重置，请使用新密码登录"
         else {
             result.put("server", client.base)
+            pairVault.read()?.takeIf { it.getString("server") == client.base }?.let {
+                result.put("computer_id",it.getString("computer_id")).put("pair_key",it.getString("pair_key"))
+            }
+            val carry = carryVault.read()
+            if(carry?.optString("owner") == owner(result)) result.put("database_name",carry.getString("database"))
             complete()
             suspend fun fetch(path: String): JSONObject = waitForComputer {
                 try { client.call(path, token = result.getString("access_token")) }
@@ -114,20 +142,21 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
                     lastBackup.value = info(snapshot)
                 } else lastBackup.value = info(metadata)
                 if(mode == "register") {
-                    val payload = localPayload()
+                    val payload = registrationPayload()
                     store.importLocal(payload)
                     message.value = "注册成功，已带入${payload.getJSONArray("entries").length()}笔本机账目；请点击备份到电脑"
                 } else message.value = if(dirty && metadata.getLong("revision") > (state?.cursor ?: 0L))
                     "登录成功。手机有未备份修改，已保留；电脑另有更新版本，请勿覆盖上传" else "登录成功，账号账目已就绪"
                 if(db.ledger().backupState(owner(result)) == null) db.ledger().setBackupState(SyncState(owner(result)))
                 saveAccount(result)
+                carryVault.clear()
             } finally { LedgerDatabases.release(name) }
         }
         complete()
     }
     private suspend fun authorized(path: String, body: JSONObject? = null): JSONObject {
         val a = requireNotNull(account.value) { "请先登录" }
-        val client = BackupClient(a.getString("server"))
+        val client = ComputerPair.client(a)
         try { return client.call(path, body, a.getString("access_token")) }
         catch(e: BackupApiException) {
             if(e.status != 401) throw e
@@ -166,6 +195,13 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             message.value = "备份成功。若上传期间又有修改，请再次备份"
         }
     }
+    private suspend fun registrationPayload(): JSONObject {
+        val carry = carryVault.read() ?: return localPayload()
+        val name = carry.getString("database")
+        val db = LedgerDatabases.acquire(app,name)
+        try { return BackupStore(db,carry.getString("owner")).export() }
+        finally { LedgerDatabases.release(name) }
+    }
     private suspend fun localPayload(): JSONObject {
         val original = LedgerDatabases.acquire(app, localDatabaseName)
         try { return BackupStore(original, "local-preview").export() }
@@ -189,7 +225,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
     fun logout() = run {
         val a = account.value
         if(a != null) {
-            try { BackupClient(a.getString("server")).call("auth/logout/", JSONObject().put("refresh_token", a.getString("refresh_token"))) }
+            try { ComputerPair.client(a).call("auth/logout/", JSONObject().put("refresh_token", a.getString("refresh_token"))) }
             catch(e: CancellationException) { throw e }
             catch(_: Exception) { /* Local sign-out remains possible while the PC is off. */ }
         }

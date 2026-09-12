@@ -10,7 +10,7 @@ import java.io.ByteArrayOutputStream
 
 class BackupApiException(val status: Int, message: String): Exception(message)
 
-class BackupClient(server: String) {
+class BackupClient(server: String, private val pairKey: String? = null) {
     val base = normalize(server)
     suspend fun call(path: String, body: JSONObject? = null, token: String? = null): JSONObject = withContext(Dispatchers.IO) {
         val connection = URI("$base/api/v1/$path").toURL().openConnection() as HttpURLConnection
@@ -19,6 +19,7 @@ class BackupClient(server: String) {
             connection.instanceFollowRedirects = false
             connection.requestMethod = if(body == null) "GET" else "POST"
             connection.setRequestProperty("Accept", "application/json")
+            pairKey?.let { connection.setRequestProperty("X-Ledger-Pair", it) }
             token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             if(body != null) {
                 val bytes = body.toString().toByteArray(Charsets.UTF_8)

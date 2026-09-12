@@ -104,6 +104,20 @@ class BackupStoreTest {
             assertEquals(listOf("test-source"),migrated.ledger().importedSources("owner"))
         } finally { migrated.close(); context.deleteDatabase(name) }
     }
+    @Test fun computerIdentitySurvivesAddressChangesAndRejectsForeignQr() {
+        val computer = java.util.UUID.randomUUID().toString()
+        val qr = JSONObject().put("type","personal-ledger-pair").put("version",1).put("server","https://one.example.com")
+            .put("computer_id",computer).put("pair_key","a".repeat(43))
+        val a = ComputerPair.parse(qr.toString()).put("user",JSONObject().put("id","user"))
+        val name = ComputerPair.databaseName(a)
+        a.put("server","https://two.example.com")
+        assertEquals(name,ComputerPair.databaseName(a))
+        a.put("computer_id",java.util.UUID.randomUUID().toString())
+        assertNotEquals(name,ComputerPair.databaseName(a))
+        qr.put("server","http://127.0.0.1:8765")
+        assertTrue(runCatching { ComputerPair.parse(qr.toString()) }.isFailure)
+        assertTrue(runCatching { ComputerPair.parse("https://example.com") }.isFailure)
+    }
     @Test fun serverAddressesRejectUnsafeDestinations() {
         assertEquals("https://example.com",BackupClient.normalize("https://EXAMPLE.com/"))
         for(value in listOf("http://example.com","https://user:password@example.com","https://example.com/path","https://example.com/?secret=x")) {

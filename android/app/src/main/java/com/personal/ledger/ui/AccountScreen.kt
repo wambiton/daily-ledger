@@ -1,6 +1,9 @@
 package com.personal.ledger.ui
 
 import android.app.Application
+import androidx.activity.compose.rememberLauncherForActivityResult
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,6 +46,10 @@ fun AccountScreen(vm: BackupViewModel) {
     val status by vm.lastBackup.collectAsStateWithLifecycle()
     val savedServer by vm.server.collectAsStateWithLifecycle()
     var address by rememberSaveable { mutableStateOf(savedServer) }
+    LaunchedEffect(savedServer) { address = savedServer }
+    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let { vm.pairComputer(it) }
+    }
     var email by rememberSaveable { mutableStateOf("") }
     // Passwords/codes do not enter saved state or persistent preferences.
     var password by remember { mutableStateOf("") }
@@ -52,6 +59,8 @@ fun AccountScreen(vm: BackupViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("账号与电脑备份", style = MaterialTheme.typography.titleLarge)
         Text("手动备份到电脑；换机登录自动加载已备份账目。日常记账无需电脑在线。", style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(onClick = { scanner.launch(ScanOptions().setDesiredBarcodeFormats(ScanOptions.QR_CODE).setPrompt("扫描电脑备份程序的二维码").setBeepEnabled(false)) },
+            enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("pair-computer")) { Text("扫码连接电脑") }
         if(account == null) {
             OutlinedTextField(address, { address = it }, label = { Text("电脑服务地址") }, placeholder = { Text("https://你的备份地址") },
                 singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("server-address"))

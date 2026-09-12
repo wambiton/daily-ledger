@@ -45,8 +45,14 @@ data class PendingOperation(
 @Entity(tableName = "sync_state")
 data class SyncState(@PrimaryKey val owner: String, val cursor: Long = 0, val lastSuccessAt: Long? = null)
 
+@Entity(tableName = "imported_sources", primaryKeys = ["owner", "sourceId"])
+data class ImportedSource(val owner: String, val sourceId: String)
+
 @Dao
 interface LedgerDao {
+    @Query("SELECT sourceId FROM imported_sources WHERE owner = :owner") suspend fun importedSources(owner: String): List<String>
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun markImported(source: ImportedSource)
+    @Query("DELETE FROM imported_sources WHERE owner = :owner") suspend fun clearImported(owner: String)
     @Query("SELECT * FROM categories WHERE owner = :owner ORDER BY rowid") suspend fun categorySnapshot(owner: String): List<Category>
     @Query("SELECT * FROM entries WHERE owner = :owner AND deletedAt IS NULL ORDER BY createdAt, id") suspend fun entrySnapshot(owner: String): List<Entry>
     @Query("SELECT * FROM sync_state WHERE owner = :owner") suspend fun backupState(owner: String): SyncState?
@@ -70,5 +76,5 @@ interface LedgerDao {
     @Query("SELECT * FROM outbox WHERE owner = :owner ORDER BY createdAt, rowid") suspend fun pending(owner: String): List<PendingOperation>
 }
 
-@Database(entities = [Category::class, Entry::class, PendingOperation::class, SyncState::class], version = 1, exportSchema = true)
+@Database(entities = [Category::class, Entry::class, PendingOperation::class, SyncState::class, ImportedSource::class], version = 2, exportSchema = true, autoMigrations = [AutoMigration(from = 1, to = 2)])
 abstract class LedgerDatabase : RoomDatabase() { abstract fun ledger(): LedgerDao }

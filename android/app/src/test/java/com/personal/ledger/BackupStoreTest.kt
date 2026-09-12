@@ -51,6 +51,31 @@ class BackupStoreTest {
         assertEquals(1L,db.ledger().backupState("first")!!.cursor)
         assertTrue(runCatching { store.restore(store.export(),0,true) }.isFailure)
     }
+    @Test fun importsAppendAndDuplicatesNeedConfirmationEvenAfterBackup() = runBlocking {
+        val repo = LedgerRepository(db,"source"); repo.seedDefaults()
+        val cat = db.ledger().categorySnapshot("source").first()
+        repo.save(null,cat.type,cat.id,"12.34",LocalDate.of(2025,1,2),"source")
+        val payload = BackupStore(db,"source").export()
+        val target = BackupStore(db,"target")
+        db.ledger().setBackupState(SyncState("target", 4, 1))
+        assertEquals(1,target.importLocal(payload))
+        val before = db.ledger().entrySnapshot("target").single()
+        assertTrue(runCatching { target.importLocal(payload) }.exceptionOrNull() is BackupStore.DuplicateImport)
+        assertEquals(listOf(before),db.ledger().entrySnapshot("target"))
+        assertEquals(1,target.importLocal(payload,true))
+        assertEquals(2468L,db.ledger().entrySnapshot("target").sumOf { it.amountFen })
+        assertEquals(2,db.ledger().entrySnapshot("target").map { it.id }.distinct().size)
+        assertEquals(4L,db.ledger().backupState("target")!!.cursor)
+        assertEquals(1,db.ledger().entrySnapshot("source").size)
+        val restored = Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(),LedgerDatabase::class.java).build()
+        try {
+            val other = BackupStore(restored,"target")
+            other.restore(target.export(),5)
+            assertTrue(runCatching { other.importLocal(payload) }.exceptionOrNull() is BackupStore.DuplicateImport)
+            restored.ledger().clearEntries("target")
+            assertTrue(runCatching { other.importLocal(payload) }.exceptionOrNull() is BackupStore.DuplicateImport)
+        } finally { restored.close() }
+    }
     @Test fun serverAddressesRejectUnsafeDestinations() {
         assertEquals("https://example.com",BackupClient.normalize("https://EXAMPLE.com/"))
         for(value in listOf("http://example.com","https://user:password@example.com","https://example.com/path","https://example.com/?secret=x")) {

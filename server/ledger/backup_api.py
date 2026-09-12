@@ -24,8 +24,13 @@ def identifier(value):
 
 
 def validate(payload):
-    if not isinstance(payload, dict) or payload.get('format_version') != 1 or set(payload) != {'format_version', 'categories', 'entries'}:
+    if not isinstance(payload, dict) or payload.get('format_version') != 1 or set(payload) not in ({'format_version', 'categories', 'entries'}, {'format_version', 'categories', 'entries', 'import_sources'}):
         raise ValueError('invalid snapshot')
+    sources = payload.get('import_sources', [])
+    if not isinstance(sources, list) or len(sources) > 50000:
+        raise ValueError('invalid import sources')
+    for source in sources:
+        identifier(source)
     categories, entries = payload['categories'], payload['entries']
     if not isinstance(categories, list) or not isinstance(entries, list) or len(categories) > 2000 or len(entries) > 50000:
         raise ValueError('too many records')

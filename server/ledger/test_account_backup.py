@@ -160,3 +160,13 @@ class AccountBackupTests(TestCase):
         response = self.client.post('/api/v1/auth/login/', '[', content_type='application/json')
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.headers['Cache-Control'], 'no-store')
+
+    def test_import_sources_roundtrip_and_validation(self):
+        from .backup_api import validate
+        payload = self.payload()
+        source = str(uuid.uuid4())
+        payload['import_sources'] = [source]
+        self.assertEqual(validate(payload)['import_sources'], [source])
+        payload['import_sources'] = ['invalid']
+        with self.assertRaises(ValueError):
+            validate(payload)

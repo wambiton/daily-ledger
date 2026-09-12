@@ -31,3 +31,8 @@ EMAIL_TIMEOUT = 15
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 LEDGER_MAIL_READY = bool(EMAIL_HOST_USER and EMAIL_HOST_PASSWORD)
 DATA_UPLOAD_MAX_MEMORY_SIZE = 20 * 1024 * 1024
+
+# Enabled only by the paired Windows companion; legacy USB remains local-only.
+LEDGER_COMPUTER_ID = os.environ.get("LEDGER_COMPUTER_ID", "")
+LEDGER_PAIR_KEY = os.environ.get("LEDGER_PAIR_KEY", "")
+MIDDLEWARE.insert(0, "ledger.pairing.PairingMiddleware")

@@ -38,6 +38,8 @@ fun AccountScreen(vm: BackupViewModel) {
     val account by vm.account.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val waiting by vm.waiting.collectAsStateWithLifecycle()
+    val duplicates by vm.duplicateCount.collectAsStateWithLifecycle()
     val status by vm.lastBackup.collectAsStateWithLifecycle()
     val savedServer by vm.server.collectAsStateWithLifecycle()
     var address by rememberSaveable { mutableStateOf(savedServer) }
@@ -49,7 +51,7 @@ fun AccountScreen(vm: BackupViewModel) {
     var confirmation by rememberSaveable { mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("账号与电脑备份", style = MaterialTheme.typography.titleLarge)
-        Text("电脑开启且服务可连接时，手动上传或恢复。手机日常记账无需电脑在线。", style = MaterialTheme.typography.bodySmall)
+        Text("手动备份到电脑；换机登录自动加载已备份账目。日常记账无需电脑在线。", style = MaterialTheme.typography.bodySmall)
         if(account == null) {
             OutlinedTextField(address, { address = it }, label = { Text("电脑服务地址") }, placeholder = { Text("https://你的备份地址") },
                 singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("server-address"))
@@ -71,23 +73,27 @@ fun AccountScreen(vm: BackupViewModel) {
             }
             Button(onClick = { vm.signIn(address, email, password, code, mode) { password = ""; code = "" } }, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().testTag("account-submit")) { Text(when(mode) { "register" -> "注册并登录"; "reset" -> "重置密码"; else -> "登录账号" }) }
-            Text("登录后使用独立账号账本。现有未登录账目仍保留，可登录后手动导入。", style = MaterialTheme.typography.bodySmall)
+            Text("首次注册自动带入原本机账目；已有账号登录后可追加导入。原本机账本始终保留。", style = MaterialTheme.typography.bodySmall)
         } else {
             Text(account!!.getJSONObject("user").getString("email"), modifier = Modifier.testTag("signed-in-email"))
             Text(account!!.getString("server"), style = MaterialTheme.typography.bodySmall)
             Text(status, modifier = Modifier.testTag("backup-status"))
-            OutlinedButton(onClick = { vm.inspect() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("查看电脑备份") }
             Button(onClick = { vm.upload() }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("upload-backup")) { Text("备份到电脑") }
-            OutlinedButton(onClick = { confirmation = "restore" }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("restore-backup")) { Text("从电脑恢复") }
-            OutlinedButton(onClick = { confirmation = "import" }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("导入原本机账目") }
+            OutlinedButton(onClick = { confirmation = "import" }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("import-local")) { Text("导入原本机账目") }
             TextButton(onClick = { vm.logout() }, enabled = !busy) { Text("退出账号，查看原本机账本") }
         }
         if(busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("正在处理，请稍候…") }
+        if(waiting) TextButton(onClick = { vm.cancelWaiting() }, modifier = Modifier.testTag("cancel-waiting")) { Text("取消等候") }
         if(message.isNotEmpty()) Text(message, modifier = Modifier.testTag("account-message"))
     }
-    confirmation?.let { action -> AlertDialog(onDismissRequest = { confirmation = null },
-        title = { Text(if(action == "restore") "恢复当前账号账目？" else "导入原本机账目？") },
-        text = { Text(if(action == "restore") "电脑最新备份将替换当前账号手机账目。尚未上传的修改不会合并；恢复前会保留一份本机副本。其他账号和原本机账本不变。" else "将原未登录账本复制到当前账号。仅允许当前账号为空且未备份时导入，原账本保留。") },
-        confirmButton = { TextButton(onClick = { confirmation = null; if(action == "restore") vm.restore() else vm.importLocal() }, modifier = Modifier.testTag("confirm-backup-action")) { Text("确认") } },
-        dismissButton = { TextButton(onClick = { confirmation = null }) { Text("取消") } }) }
+    if(confirmation != null) AlertDialog(onDismissRequest = { confirmation = null },
+        title = { Text("导入原本机账目？") },
+        text = { Text("将原未登录账本追加到当前账号，保留现有账目。原本机账本不会删除。") },
+        confirmButton = { TextButton(onClick = { confirmation = null; vm.importLocal() }, modifier = Modifier.testTag("confirm-backup-action")) { Text("导入") } },
+        dismissButton = { TextButton(onClick = { confirmation = null }) { Text("取消") } })
+    if(duplicates > 0) AlertDialog(onDismissRequest = { vm.dismissImport() },
+        title = { Text("账目已重复导入") },
+        text = { Text("其中${duplicates}笔本机账目已导入过。继续将再次新增相同账目，原有账目保留，两笔都计入统计。是否继续？") },
+        confirmButton = { TextButton(onClick = { vm.importLocal(true) }, enabled = !busy, modifier = Modifier.testTag("confirm-duplicate-import")) { Text("继续导入") } },
+        dismissButton = { TextButton(onClick = { vm.dismissImport() }, enabled = !busy) { Text("取消") } })
 }

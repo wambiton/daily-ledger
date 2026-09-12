@@ -11,16 +11,30 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 import java.io.File
 
-class BackupViewModel @JvmOverloads constructor(application: Application, private val vaultName: String = "account"): AndroidViewModel(application) {
+class BackupViewModel @JvmOverloads constructor(application: Application, private val vaultName: String = "account", private val localDatabaseName: String = "ledger.db"): AndroidViewModel(application) {
     private val app = application
     private val vault = AccountVault(app, vaultName)
     val account = MutableStateFlow<JSONObject?>(null)
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow("")
     val server = MutableStateFlow(app.getSharedPreferences("backup-settings-$vaultName", 0).getString("server", "") ?: "")
-    val lastBackup = MutableStateFlow("尚未查看电脑备份")
+    val lastBackup = MutableStateFlow("尚未备份到电脑")
+    val waiting = MutableStateFlow(false)
+    val duplicateCount = MutableStateFlow(0)
+    private var pendingImport: JSONObject? = null
+    private var action: Job? = null
     init {
-        try { account.value = vault.read() } catch(_: Exception) { message.value = "登录凭据无法读取，请重新登录；本地账目仍保留" }
+        try {
+            account.value = vault.read()
+            account.value?.let { a -> viewModelScope.launch {
+                val name = databaseName(a)
+                val db = LedgerDatabases.acquire(app, name)
+                try {
+                    val state = db.ledger().backupState(owner(a))
+                    if(state != null && state.cursor > 0) lastBackup.value = "上次电脑备份版本 ${state.cursor} · ${java.util.Date(state.lastSuccessAt ?: 0)}"
+                } finally { LedgerDatabases.release(name) }
+            } }
+        } catch(_: Exception) { message.value = "登录凭据无法读取，请重新登录；本地账目仍保留" }
     }
     fun databaseName(a: JSONObject) = "account-${AccountVault.databaseKey(a.getString("server"), a.getJSONObject("user").getString("id"))}.db"
     private fun owner(a: JSONObject) = a.getJSONObject("user").getString("id")
@@ -28,13 +42,30 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
     private fun run(block: suspend () -> Unit) {
         if(busy.value) return
         busy.value = true; message.value = ""
-        viewModelScope.launch {
+        action = viewModelScope.launch {
             try { block() }
             catch(e: CancellationException) { throw e }
             catch(e: BackupApiException) { message.value = e.message ?: "服务请求失败" }
             catch(e: IllegalArgumentException) { message.value = e.message ?: "请检查填写内容" }
             catch(_: Exception) { message.value = "无法连接电脑或操作失败，请确认电脑服务已开启后重试；手机账目仍保留" }
-            finally { busy.value = false }
+            finally { busy.value = false; waiting.value = false }
+        }
+    }
+    fun cancelWaiting() { action?.cancel(); message.value = "已取消等候，手机账目仍保留" }
+    private suspend fun <T> waitForComputer(block: suspend () -> T): T {
+        while(true) {
+            try { return block().also { waiting.value = false } }
+            catch(e: BackupApiException) {
+                if(e.status != 503) throw e
+                waiting.value = true
+                message.value = "电脑尚未连接，请等候；服务恢复后会自动继续"
+                delay(5000)
+            }
+            catch(e: java.io.IOException) {
+                waiting.value = true
+                message.value = "电脑尚未连接，请等候；连接恢复后会自动继续"
+                delay(5000)
+            }
         }
     }
     private fun client(address: String): BackupClient {
@@ -52,13 +83,45 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         require(password.codePointCount(0, password.length) >= 8) { "密码至少需要8个字符，不限制字符类型" }
         if(mode != "login") require(code.matches(Regex("[0-9]{6}"))) { "请输入邮箱收到的6位验证码" }
         val client = client(address)
-        val result = client.call("auth/$mode/", JSONObject().put("email", email).put("password", password).put("code", code))
+        val body = JSONObject().put("email", email).put("password", password).put("code", code)
+        // Registration is not replayed automatically: a lost response may already have created the account.
+        val result = if(mode == "login") waitForComputer { client.call("auth/login/", body) }
+            else { waitForComputer { client.call("health/") }; client.call("auth/$mode/", body) }
         if(mode == "reset") message.value = "密码已重置，请使用新密码登录"
         else {
             result.put("server", client.base)
-            saveAccount(result)
-            lastBackup.value = "请点击查看电脑备份"
-            message.value = "登录成功。原本机账本保留，可手动导入当前账号"
+            complete()
+            suspend fun fetch(path: String): JSONObject = waitForComputer {
+                try { client.call(path, token = result.getString("access_token")) }
+                catch(e: BackupApiException) {
+                    if(e.status != 401) throw e
+                    val fresh = client.call("auth/refresh/", JSONObject().put("refresh_token", result.getString("refresh_token")))
+                    result.put("access_token", fresh.getString("access_token")).put("refresh_token", fresh.getString("refresh_token"))
+                    client.call(path, token = result.getString("access_token"))
+                }
+            }
+            val metadata = fetch("backup/latest/")
+            val name = databaseName(result)
+            val db = LedgerDatabases.acquire(app, name)
+            try {
+                val store = BackupStore(db, owner(result))
+                val state = db.ledger().backupState(owner(result))
+                val rows = db.ledger().entrySnapshot(owner(result))
+                val dirty = db.ledger().pending(owner(result)).any { it.entityType == "entry" } || pendingFile(result).baseFile.exists()
+                if(metadata.getLong("revision") > (state?.cursor ?: 0L) && !dirty && (state != null || rows.isEmpty())) {
+                    val snapshot = fetch("backup/download/")
+                    store.restore(snapshot.getJSONObject("payload"), snapshot.getLong("revision"))
+                    lastBackup.value = info(snapshot)
+                } else lastBackup.value = info(metadata)
+                if(mode == "register") {
+                    val payload = localPayload()
+                    store.importLocal(payload)
+                    message.value = "注册成功，已带入${payload.getJSONArray("entries").length()}笔本机账目；请点击备份到电脑"
+                } else message.value = if(dirty && metadata.getLong("revision") > (state?.cursor ?: 0L))
+                    "登录成功。手机有未备份修改，已保留；电脑另有更新版本，请勿覆盖上传" else "登录成功，账号账目已就绪"
+                if(db.ledger().backupState(owner(result)) == null) db.ledger().setBackupState(SyncState(owner(result)))
+                saveAccount(result)
+            } finally { LedgerDatabases.release(name) }
         }
         complete()
     }
@@ -103,29 +166,24 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             message.value = "备份成功。若上传期间又有修改，请再次备份"
         }
     }
-    fun restore() = run {
-        val result = authorized("backup/download/")
-        store { store, a, _ ->
-            withContext(Dispatchers.IO) {
-                // Retain a local safety snapshot before replacing this account's records.
-                write(AtomicFile(File(app.noBackupFilesDir, databaseName(a) + ".before-restore-${System.currentTimeMillis()}.json")), store.export())
-                store.restore(result.getJSONObject("payload"), result.getLong("revision"))
-                pendingFile(a).delete()
-            }
-            lastBackup.value = info(result)
-            message.value = "恢复成功。恢复前的本机副本已保留"
-        }
+    private suspend fun localPayload(): JSONObject {
+        val original = LedgerDatabases.acquire(app, localDatabaseName)
+        try { return BackupStore(original, "local-preview").export() }
+        finally { LedgerDatabases.release(localDatabaseName) }
     }
-    fun importLocal() = run {
-        store { store, a, db ->
-            require((db.ledger().backupState(owner(a))?.cursor ?: 0L) == 0L) { "此账号已恢复或备份过，不能覆盖导入" }
-            val original = LedgerDatabases.acquire(app, "ledger.db")
+    fun dismissImport() { pendingImport = null; duplicateCount.value = 0 }
+    fun importLocal(allowDuplicates: Boolean = false) = run {
+        val payload = if(allowDuplicates) requireNotNull(pendingImport) { "请重新选择导入" } else localPayload()
+        require(payload.getJSONArray("entries").length() > 0) { "原本机账本没有账目" }
+        store { store, _, _ ->
             try {
-                val payload = BackupStore(original, "local-preview").export()
-                require(payload.getJSONArray("entries").length() > 0) { "原本机账本没有账目" }
-                store.restore(payload, 0, requireEmpty = true)
-                message.value = "本机账目已复制到当前账号，请点击备份到电脑；原账本保留"
-            } finally { LedgerDatabases.release("ledger.db") }
+                val count = store.importLocal(payload, allowDuplicates)
+                dismissImport()
+                message.value = "已追加${count}笔本机账目，请点击备份到电脑；原账本保留"
+            } catch(e: BackupStore.DuplicateImport) {
+                pendingImport = payload
+                duplicateCount.value = e.count
+            }
         }
     }
     fun logout() = run {
@@ -135,6 +193,6 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             catch(e: CancellationException) { throw e }
             catch(_: Exception) { /* Local sign-out remains possible while the PC is off. */ }
         }
-        vault.clear(); account.value = null; message.value = "已退出，账号账目仍保存在手机；重新登录可继续使用"
+        dismissImport(); vault.clear(); account.value = null; message.value = "已退出，账号账目仍保存在手机；重新登录可继续使用"
     }
 }

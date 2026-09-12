@@ -57,12 +57,15 @@ class AccountBackupFlowTest {
             ui.onNodeWithTag("upload-backup").performScrollTo().performClick()
             ui.waitUntil(30000) { !vm.busy.value }
             assertTrue(vm.message.value,vm.message.value.startsWith("备份成功"))
-            // Only this newly created fixture account is cleared to simulate a new phone.
-            runBlocking { db.ledger().clearEntries(owner) }
-            ui.onNodeWithTag("restore-backup").performScrollTo().performClick()
-            ui.onNodeWithTag("confirm-backup-action").performClick()
+            // A fresh fixture database simulates another phone; real ledgers are never opened.
+            ui.runOnIdle { vm.logout() }
             ui.waitUntil(30000) { !vm.busy.value }
-            assertTrue(vm.message.value,vm.message.value.startsWith("恢复成功"))
+            db.close()
+            app.deleteDatabase(name)
+            ui.runOnIdle { vm.signIn("http://127.0.0.1:8767",args.getString("backup_email")!!,"12345678","","login") }
+            ui.waitUntil(30000) { !vm.busy.value }
+            assertNotNull(vm.message.value, vm.account.value)
+            db = Room.databaseBuilder(app,LedgerDatabase::class.java,name).build()
             runBlocking {
                 assertEquals(4567L,db.ledger().entrySnapshot(owner).single().amountFen)
                 assertTrue(db.ledger().entrySnapshot("unrelated-account").isEmpty())
@@ -82,4 +85,83 @@ class AccountBackupFlowTest {
             AccountVault(app,namespace).clear()
         }
     }
+    @Test fun registrationImportsAndDuplicateConfirmationAppends() {
+        val args = InstrumentationRegistry.getArguments()
+        Assume.assumeTrue(args.containsKey("register_email"))
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val namespace = "register-test-${UUID.randomUUID()}"
+        val local = "$namespace.db"
+        val source = LedgerDatabases.acquire(app, local)
+        val vm = BackupViewModel(app, namespace, local)
+        val holder = ViewModelStore().apply { put("backup",vm) }
+        var accountName: String? = null
+        try {
+            runBlocking {
+                val repo = LedgerRepository(source,"local-preview"); repo.seedDefaults()
+                val cat = source.ledger().categorySnapshot("local-preview").first()
+                repo.save(null,cat.type,cat.id,"10.00",LocalDate.of(2025,1,2),"synthetic-import")
+            }
+            ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AccountScreen(vm) } } }
+            ui.runOnIdle { vm.signIn("http://127.0.0.1:8767", args.getString("register_email")!!,"12345678",args.getString("register_code")!!,"register") }
+            ui.waitUntil(30000) { !vm.busy.value }
+            assertNotNull(vm.message.value,vm.account.value)
+            val account = vm.account.value!!
+            accountName = vm.databaseName(account)
+            val target = LedgerDatabases.acquire(app, accountName)
+            try {
+                val owner = account.getJSONObject("user").getString("id")
+                runBlocking { assertEquals(1,target.ledger().entrySnapshot(owner).size) }
+                ui.onNodeWithTag("upload-backup").performScrollTo().performClick()
+                ui.waitUntil(30000) { !vm.busy.value }
+                assertTrue(vm.message.value,vm.message.value.startsWith("备份成功"))
+                ui.onNodeWithTag("import-local").performScrollTo().performClick()
+                ui.onNodeWithTag("confirm-backup-action").performClick()
+                ui.waitUntil(10000) { vm.duplicateCount.value == 1 }
+                runBlocking { assertEquals(1,target.ledger().entrySnapshot(owner).size) }
+                ui.onNodeWithTag("confirm-duplicate-import").performClick()
+                ui.waitUntil(10000) { !vm.busy.value && vm.duplicateCount.value == 0 }
+                runBlocking {
+                    val entries = target.ledger().entrySnapshot(owner)
+                    assertEquals(2,entries.map { it.id }.distinct().size)
+                    assertEquals(2000L,entries.sumOf { it.amountFen })
+                    assertEquals(1,source.ledger().entrySnapshot("local-preview").size)
+                }
+                ui.onNodeWithText("查看电脑备份").assertDoesNotExist()
+                ui.onNodeWithTag("restore-backup").assertDoesNotExist()
+            } finally { LedgerDatabases.release(accountName) }
+        } finally {
+            holder.clear(); LedgerDatabases.release(local); app.deleteDatabase(local)
+            accountName?.let { app.deleteDatabase(it) }; AccountVault(app,namespace).clear()
+        }
+    }
+
+    @Test fun offlineLoginWaitsWithoutPublishingEmptyAccountThenResumes() {
+        val args = InstrumentationRegistry.getArguments()
+        Assume.assumeTrue(args.containsKey("waiting_email"))
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val namespace = "waiting-test-${UUID.randomUUID()}"
+        val vm = BackupViewModel(app, namespace)
+        val holder = ViewModelStore().apply { put("backup",vm) }
+        var name: String? = null
+        try {
+            ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AccountScreen(vm) } } }
+            ui.runOnIdle { vm.signIn("http://127.0.0.1:8767",args.getString("waiting_email")!!,"12345678","","login") }
+            ui.waitUntil(10000) { vm.waiting.value }
+            assertNull(vm.account.value)
+            assertTrue(vm.message.value.contains("电脑尚未连接，请等候"))
+            ui.waitUntil(30000) { !vm.busy.value }
+            assertNotNull(vm.message.value,vm.account.value)
+            name = vm.databaseName(vm.account.value!!)
+            ui.runOnIdle { vm.logout() }
+            ui.waitUntil(30000) { !vm.busy.value }
+            ui.runOnIdle { vm.signIn("http://127.0.0.1:8768",args.getString("waiting_email")!!,"12345678","","login") }
+            ui.waitUntil(30000) { vm.waiting.value }
+            ui.runOnIdle { vm.cancelWaiting() }
+            ui.waitUntil(10000) { !vm.busy.value }
+            assertNull(vm.account.value)
+        } finally {
+            holder.clear(); name?.let { app.deleteDatabase(it) }; AccountVault(app,namespace).clear()
+        }
+    }
+
 }

@@ -1,0 +1,7 @@
+-r ../server/requirements.txt
+waitress==3.0.2
+pystray==0.19.5
+pillow==12.3.0
+qrcode==8.2
+pywin32==312
+pyinstaller==6.22.2

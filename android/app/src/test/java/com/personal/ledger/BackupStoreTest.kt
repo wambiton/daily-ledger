@@ -76,6 +76,34 @@ class BackupStoreTest {
             assertTrue(runCatching { other.importLocal(payload) }.exceptionOrNull() is BackupStore.DuplicateImport)
         } finally { restored.close() }
     }
+    @Test fun versionOneMigrationPreservesExistingLedger() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "migration-${java.util.UUID.randomUUID()}.db"
+        val path = context.getDatabasePath(name)
+        path.parentFile!!.mkdirs()
+        val schema = JSONObject(java.io.File("schemas/com.personal.ledger.data.LedgerDatabase/1.json").readText()).getJSONObject("database")
+        android.database.sqlite.SQLiteDatabase.openOrCreateDatabase(path,null).use { old ->
+            val entities = schema.getJSONArray("entities")
+            for(i in 0 until entities.length()) {
+                val entity = entities.getJSONObject(i)
+                old.execSQL(entity.getString("createSql").replace("\${TABLE_NAME}",entity.getString("tableName")))
+                val indices = entity.getJSONArray("indices")
+                for(j in 0 until indices.length()) old.execSQL(indices.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}",entity.getString("tableName")))
+            }
+            val setup = schema.getJSONArray("setupQueries")
+            for(i in 0 until setup.length()) old.execSQL(setup.getString(i))
+            old.execSQL("INSERT INTO categories VALUES ('category','owner','expense','餐饮',NULL,0)")
+            old.execSQL("INSERT INTO entries VALUES ('entry','owner','expense','category',1234,'2025-01-02','migration',1,1,0,NULL)")
+            old.version = 1
+        }
+        val migrated = Room.databaseBuilder(context,LedgerDatabase::class.java,name).build()
+        try {
+            assertEquals(1234L,migrated.ledger().entrySnapshot("owner").single().amountFen)
+            assertTrue(migrated.ledger().importedSources("owner").isEmpty())
+            migrated.ledger().markImported(ImportedSource("owner","test-source"))
+            assertEquals(listOf("test-source"),migrated.ledger().importedSources("owner"))
+        } finally { migrated.close(); context.deleteDatabase(name) }
+    }
     @Test fun serverAddressesRejectUnsafeDestinations() {
         assertEquals("https://example.com",BackupClient.normalize("https://EXAMPLE.com/"))
         for(value in listOf("http://example.com","https://user:password@example.com","https://example.com/path","https://example.com/?secret=x")) {

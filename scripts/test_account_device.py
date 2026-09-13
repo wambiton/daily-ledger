@@ -8,6 +8,9 @@ import subprocess
 import sys
 import tempfile
 import threading
+import re
+import time
+import xml.etree.ElementTree as ET
 import uuid
 from wsgiref.simple_server import make_server, WSGIRequestHandler
 
@@ -63,8 +66,29 @@ def main():
         serial = '3B159R0037100000'
         try:
             subprocess.run([adb,'-s',serial,'reverse','tcp:8767','tcp:8767'],check=True,capture_output=True)
+            # Some realme builds deny shell permission grants; accept the app's
+            # user-authorized notification prompt through its normal system UI.
+            permission_stop = threading.Event()
+            def allow_notification():
+                while not permission_stop.wait(1):
+                    try:
+                        subprocess.run([adb,'-s',serial,'shell','uiautomator','dump','/data/local/tmp/ledger-permission.xml'],capture_output=True,timeout=8)
+                        raw = subprocess.run([adb,'-s',serial,'shell','cat','/data/local/tmp/ledger-permission.xml'],capture_output=True,timeout=5).stdout
+                        tree = ET.fromstring(raw)
+                        text = ' '.join(n.get('text','') for n in tree.iter('node'))
+                        if '个人记账' not in text or not any(word in text for word in ('通知','notification')):
+                            continue
+                        for node in tree.iter('node'):
+                            if node.get('resource-id','').endswith(':id/permission_allow_button'):
+                                bounds = list(map(int,re.findall(r'\d+',node.get('bounds',''))))
+                                if len(bounds)==4:
+                                    subprocess.run([adb,'-s',serial,'shell','input','tap',str((bounds[0]+bounds[2])//2),str((bounds[1]+bounds[3])//2)],capture_output=True)
+                                return
+                    except Exception: pass
+            threading.Thread(target=allow_notification,daemon=True).start()
             result = subprocess.run([adb,'-s',serial,'shell','am','instrument','-w','-e','backup_email',email,'-e','waiting_email',waiting_email,'-e','register_email',register_email,'-e','register_code',register_code,
                 'com.personal.ledger.test/androidx.test.runner.AndroidJUnitRunner'],capture_output=True,timeout=240)
+            permission_stop.set()
             output = result.stdout.decode('utf-8',errors='replace')
             print(output)
             if result.returncode or 'OK (14 tests)' not in output or 'FAILURES' in output:

@@ -1,6 +1,11 @@
 package com.personal.ledger.ui
 
 import android.app.Application
+import android.Manifest
+import android.os.Build
+import android.content.pm.PackageManager
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.rememberLauncherForActivityResult
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
@@ -40,6 +45,9 @@ fun LedgerHost() {
 fun AccountScreen(vm: BackupViewModel) {
     val account by vm.account.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
+    val uploading by vm.uploading.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.upload() }
     val message by vm.message.collectAsStateWithLifecycle()
     val waiting by vm.waiting.collectAsStateWithLifecycle()
     val duplicates by vm.duplicateCount.collectAsStateWithLifecycle()
@@ -87,8 +95,12 @@ fun AccountScreen(vm: BackupViewModel) {
             Text(account!!.getJSONObject("user").getString("email"), modifier = Modifier.testTag("signed-in-email"))
             Text(account!!.getString("server"), style = MaterialTheme.typography.bodySmall)
             Text(status, modifier = Modifier.testTag("backup-status"))
-            Button(onClick = { vm.upload() }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("upload-backup")) { Text("备份到电脑") }
+            Button(onClick = {
+                if(Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else vm.upload()
+            }, enabled = !busy && !uploading, modifier = Modifier.fillMaxWidth().testTag("upload-backup")) { Text("备份到电脑") }
             OutlinedButton(onClick = { confirmation = "import" }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("import-local")) { Text("导入原本机账目") }
+            if(uploading) OutlinedButton(onClick = { vm.cancelUpload() },modifier = Modifier.testTag("cancel-upload")) { Text("取消后台备份") }
             TextButton(onClick = { vm.logout() }, enabled = !busy) { Text("退出账号，查看原本机账本") }
         }
         if(busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("正在处理，请稍候…") }

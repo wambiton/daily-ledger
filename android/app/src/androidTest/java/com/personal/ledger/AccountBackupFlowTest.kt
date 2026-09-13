@@ -42,7 +42,7 @@ class AccountBackupFlowTest {
             assertEquals(7,ui.onNodeWithTag("account-password").fetchSemanticsNode().config[SemanticsProperties.EditableText].text.length)
             ui.onNodeWithTag("account-password").performScrollTo().performTextReplacement("12345678")
             ui.onNodeWithTag("account-submit").performScrollTo().performClick()
-            ui.waitUntil(30000) { !vm.busy.value }
+            ui.waitUntil(30000) { !vm.busy.value && !vm.uploading.value }
             assertNotNull(vm.message.value,vm.account.value)
             val account = vm.account.value!!
             name = vm.databaseName(account)
@@ -55,15 +55,15 @@ class AccountBackupFlowTest {
                 repo.save(null,"expense",cat.id,"45.67",LocalDate.of(2025,3,4),"synthetic-device-backup")
             }
             ui.onNodeWithTag("upload-backup").performScrollTo().performClick()
-            ui.waitUntil(30000) { !vm.busy.value }
+            ui.waitUntil(60000) { vm.message.value.startsWith("备份成功") }
             assertTrue(vm.message.value,vm.message.value.startsWith("备份成功"))
             // A fresh fixture database simulates another phone; real ledgers are never opened.
             ui.runOnIdle { vm.logout() }
-            ui.waitUntil(30000) { !vm.busy.value }
+            ui.waitUntil(30000) { !vm.busy.value && !vm.uploading.value }
             db.close()
             app.deleteDatabase(name)
             ui.runOnIdle { vm.signIn("http://127.0.0.1:8767",args.getString("backup_email")!!,"12345678","","login") }
-            ui.waitUntil(30000) { !vm.busy.value }
+            ui.waitUntil(30000) { !vm.busy.value && !vm.uploading.value }
             assertNotNull(vm.message.value, vm.account.value)
             db = Room.databaseBuilder(app,LedgerDatabase::class.java,name).build()
             runBlocking {
@@ -76,7 +76,7 @@ class AccountBackupFlowTest {
             holder.put("reopened",reopened)
             assertEquals(owner,reopened.account.value!!.getJSONObject("user").getString("id"))
             ui.runOnIdle { vm.logout() }
-            ui.waitUntil(30000) { !vm.busy.value }
+            ui.waitUntil(30000) { !vm.busy.value && !vm.uploading.value }
             assertNull(vm.account.value)
             runBlocking { assertEquals(1,db.ledger().entrySnapshot(owner).size) }
         } finally {
@@ -103,7 +103,7 @@ class AccountBackupFlowTest {
             }
             ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AccountScreen(vm) } } }
             ui.runOnIdle { vm.signIn("http://127.0.0.1:8767", args.getString("register_email")!!,"12345678",args.getString("register_code")!!,"register") }
-            ui.waitUntil(30000) { !vm.busy.value }
+            ui.waitUntil(30000) { !vm.busy.value && !vm.uploading.value }
             assertNotNull(vm.message.value,vm.account.value)
             val account = vm.account.value!!
             accountName = vm.databaseName(account)
@@ -112,7 +112,7 @@ class AccountBackupFlowTest {
                 val owner = account.getJSONObject("user").getString("id")
                 runBlocking { assertEquals(1,target.ledger().entrySnapshot(owner).size) }
                 ui.onNodeWithTag("upload-backup").performScrollTo().performClick()
-                ui.waitUntil(30000) { !vm.busy.value }
+                ui.waitUntil(60000) { vm.message.value.startsWith("备份成功") }
                 assertTrue(vm.message.value,vm.message.value.startsWith("备份成功"))
                 ui.onNodeWithTag("import-local").performScrollTo().performClick()
                 ui.onNodeWithTag("confirm-backup-action").performClick()
@@ -149,15 +149,15 @@ class AccountBackupFlowTest {
             ui.waitUntil(10000) { vm.waiting.value }
             assertNull(vm.account.value)
             assertTrue(vm.message.value.contains("电脑尚未连接，请等候"))
-            ui.waitUntil(30000) { !vm.busy.value }
+            ui.waitUntil(30000) { !vm.busy.value && !vm.uploading.value }
             assertNotNull(vm.message.value,vm.account.value)
             name = vm.databaseName(vm.account.value!!)
             ui.runOnIdle { vm.logout() }
-            ui.waitUntil(30000) { !vm.busy.value }
+            ui.waitUntil(30000) { !vm.busy.value && !vm.uploading.value }
             ui.runOnIdle { vm.signIn("http://127.0.0.1:8768",args.getString("waiting_email")!!,"12345678","","login") }
             ui.waitUntil(30000) { vm.waiting.value }
             ui.runOnIdle { vm.cancelWaiting() }
-            ui.waitUntil(10000) { !vm.busy.value }
+            ui.waitUntil(10000) { !vm.busy.value && !vm.uploading.value }
             assertNull(vm.account.value)
         } finally {
             holder.clear(); name?.let { app.deleteDatabase(it) }; AccountVault(app,namespace).clear()

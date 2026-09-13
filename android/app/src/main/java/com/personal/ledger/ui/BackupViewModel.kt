@@ -1,6 +1,8 @@
 package com.personal.ledger.ui
 
 import android.app.Application
+import android.content.SharedPreferences
+import kotlinx.coroutines.sync.withLock
 import android.util.AtomicFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,7 +27,19 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
     val duplicateCount = MutableStateFlow(0)
     private var pendingImport: JSONObject? = null
     private var action: Job? = null
+    val uploading = MutableStateFlow(BackgroundBackup.active(app,vaultName))
+    private val jobPrefs = BackgroundBackup.prefs(app,vaultName)
+    private val jobListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, _ ->
+        uploading.value = prefs.getBoolean("active",false)
+        message.value = prefs.getString("message","") ?: ""
+        prefs.getString("result",null)?.let { runCatching { lastBackup.value = info(JSONObject(it)) } }
+    }
+    override fun onCleared() { jobPrefs.unregisterOnSharedPreferenceChangeListener(jobListener);super.onCleared() }
+    fun cancelUpload() { BackgroundBackup.cancel(app,vaultName);uploading.value = false }
+
     init {
+        jobPrefs.registerOnSharedPreferenceChangeListener(jobListener)
+        if(uploading.value) message.value = jobPrefs.getString("message", "正在后台等待电脑") ?: ""
         try {
             account.value = vault.read()
             account.value?.let { a -> viewModelScope.launch {
@@ -43,6 +57,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         val candidate = ComputerPair.parse(contents)
         val verified = ComputerPair.client(candidate).call("computer/")
         require(verified.getString("computer_id") == candidate.getString("computer_id")) { "电脑身份不匹配，请重新扫码" }
+        BackgroundBackup.lock.withLock {
         val old = account.value
         if(old != null && old.optString("computer_id") == candidate.getString("computer_id")) {
             val updated = JSONObject(old.toString()).put("database_name",databaseName(old))
@@ -50,6 +65,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             saveAccount(updated)
             message.value = "电脑连接地址已更新，原账号和账目保留"
         } else {
+            cancelUpload()
             if(old != null) carryVault.write(JSONObject().put("database",databaseName(old)).put("owner",owner(old)))
             vault.clear(); account.value = null
             message.value = "电脑已配对，请登录或注册。新电脑注册时会带入手机当前账目"
@@ -57,6 +73,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         pairVault.write(candidate)
         server.value = candidate.getString("server")
         app.getSharedPreferences("backup-settings-$vaultName",0).edit().putString("server",server.value).apply()
+        }
     }
     private fun owner(a: JSONObject) = a.getJSONObject("user").getString("id")
     private fun saveAccount(a: JSONObject) { vault.write(a); account.value = a }
@@ -181,19 +198,11 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         try { stream.write(value.toString().toByteArray(Charsets.UTF_8)); file.finishWrite(stream) }
         catch(e: Exception) { file.failWrite(stream); throw e }
     }
-    fun upload() = run {
-        store { store, a, _ ->
-            val file = pendingFile(a)
-            val pending = withContext(Dispatchers.IO) {
-                if(file.baseFile.exists()) JSONObject(String(file.readFully(), Charsets.UTF_8)) else store.prepare().also { write(file, it) }
-            }
-            val response = authorized("backup/", JSONObject(pending.toString()).apply { remove("pending_ids") })
-            val ids = pending.getJSONArray("pending_ids")
-            store.acknowledge(response.getLong("revision"), (0 until ids.length()).map { ids.getString(it) })
-            withContext(Dispatchers.IO) { file.delete() }
-            lastBackup.value = info(response)
-            message.value = "备份成功。若上传期间又有修改，请再次备份"
-        }
+    fun upload() {
+        val current = account.value ?: return
+        if(busy.value || uploading.value) return
+        uploading.value = true
+        BackgroundBackup.enqueue(app,vaultName,current)
     }
     private suspend fun registrationPayload(): JSONObject {
         val carry = carryVault.read() ?: return localPayload()
@@ -223,6 +232,8 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         }
     }
     fun logout() = run {
+        cancelUpload()
+        BackgroundBackup.lock.withLock {
         val a = account.value
         if(a != null) {
             try { ComputerPair.client(a).call("auth/logout/", JSONObject().put("refresh_token", a.getString("refresh_token"))) }
@@ -230,5 +241,6 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             catch(_: Exception) { /* Local sign-out remains possible while the PC is off. */ }
         }
         dismissImport(); vault.clear(); account.value = null; message.value = "已退出，账号账目仍保存在手机；重新登录可继续使用"
+        }
     }
 }

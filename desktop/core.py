@@ -28,7 +28,7 @@ def identity(folder):
     path = Path(folder) / 'computer.json'
     if not path.exists():
         save(path, {'computer_id': str(uuid.uuid4()), 'pair_key': protect(secrets.token_urlsafe(32)),
-                    'secret': protect(secrets.token_urlsafe(48))})
+                    'secret': protect((Path(folder)/'server-secret.txt').read_text(encoding='utf-8').strip() if (Path(folder)/'server-secret.txt').exists() else secrets.token_urlsafe(48))})
     data = json.loads(path.read_text(encoding='utf-8'))
     return {'computer_id': data['computer_id'], 'pair_key': unprotect(data['pair_key']), 'secret': unprotect(data['secret'])}
 
@@ -36,6 +36,11 @@ def identity(folder):
 def mail_config(folder):
     path = Path(folder) / 'smtp.json'
     if not path.exists():
+        legacy = Path(folder) / 'mail-config.json'
+        if legacy.exists():
+            data = json.loads(legacy.read_text(encoding='utf-8-sig'))
+            value = win32crypt.CryptUnprotectData(bytes.fromhex(data['protectedPassword']), None, None, None, 0)[1].decode('utf-16-le')
+            return data['email'], value
         return '', ''
     data = json.loads(path.read_text(encoding='utf-8'))
     return data['email'], unprotect(data['protected'])

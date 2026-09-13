@@ -17,4 +17,11 @@ class ConfigurationTests(unittest.TestCase):
             self.assertEqual(qr['computer_id'],before['computer_id'])
             with self.assertRaises(ValueError):pairing('http://example.com',before)
 
+    def test_existing_windows_mail_settings_can_be_reused(self):
+        import win32crypt
+        with tempfile.TemporaryDirectory() as folder:
+            encrypted = win32crypt.CryptProtectData('synthetic-legacy'.encode('utf-16-le'),None,None,None,None,0).hex()
+            (Path(folder)/'mail-config.json').write_text(json.dumps({'email':'legacy@qq.com','protectedPassword':encrypted}),encoding='utf-8-sig')
+            self.assertEqual(mail_config(folder),('legacy@qq.com','synthetic-legacy'))
+
 if __name__ == '__main__':unittest.main()

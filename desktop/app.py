@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--data-dir', default=str(Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'PersonalLedgerBackup'))
     parser.add_argument('--port', type=int, default=18765)
     parser.add_argument('--smoke-test', action='store_true')
+    parser.add_argument('--diagnostic-file')
     args = parser.parse_args()
     if args.serve:
         from origin import run
@@ -149,7 +150,7 @@ def main():
             kind,value=events.get()
             if stopped.is_set():continue
             if kind=='ready':
-                picture=qrcode.make(pairing(value,computer)).resize((290,290))
+                picture=qrcode.make(pairing(value,computer)).resize((290,290),Image.Resampling.NEAREST)
                 photo=ImageTk.PhotoImage(picture);qr_label.configure(image=photo,text='');qr_label.image=photo
                 status.set('外网通道已连接，请用手机扫码。关闭窗口后仍在系统托盘运行。')
             else:status.set(value)
@@ -158,4 +159,14 @@ def main():
     if args.smoke_test:root.after(1500,quit_app)
     root.mainloop()
 
-if __name__=='__main__':main()
+if __name__=='__main__':
+    try:
+        main()
+    except Exception:
+        if '--diagnostic-file' in sys.argv:
+            import traceback
+            Path(sys.argv[sys.argv.index('--diagnostic-file')+1]).write_text(traceback.format_exc(),encoding='utf-8')
+        else:
+            from tkinter import messagebox
+            messagebox.showerror('电脑备份启动失败','程序未能启动，请检查数据目录的访问权限或联系开发者。')
+        raise SystemExit(1)

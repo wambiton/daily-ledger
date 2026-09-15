@@ -114,6 +114,8 @@ class BackupStoreTest {
         assertEquals(name,ComputerPair.databaseName(a))
         a.put("computer_id",java.util.UUID.randomUUID().toString())
         assertNotEquals(name,ComputerPair.databaseName(a))
+        a.put("database_name",name)
+        assertEquals(name,ComputerPair.databaseName(a))
         qr.put("server","http://127.0.0.1:8765")
         assertTrue(runCatching { ComputerPair.parse(qr.toString()) }.isFailure)
         assertTrue(runCatching { ComputerPair.parse("https://example.com") }.isFailure)

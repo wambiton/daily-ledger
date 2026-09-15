@@ -58,7 +58,8 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         val verified = ComputerPair.client(candidate).call("computer/")
         require(verified.getString("computer_id") == candidate.getString("computer_id")) { "电脑身份不匹配，请重新扫码" }
         BackgroundBackup.lock.withLock {
-        val old = account.value
+        // A background upload may have rotated the session while this screen stayed open.
+        val old = vault.read()
         if(old != null && old.optString("computer_id") == candidate.getString("computer_id")) {
             val updated = JSONObject(old.toString()).put("database_name",databaseName(old))
                 .put("server",candidate.getString("server")).put("pair_key",candidate.getString("pair_key"))
@@ -234,7 +235,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
     fun logout() = run {
         cancelUpload()
         BackgroundBackup.lock.withLock {
-        val a = account.value
+        val a = vault.read()
         if(a != null) {
             try { ComputerPair.client(a).call("auth/logout/", JSONObject().put("refresh_token", a.getString("refresh_token"))) }
             catch(e: CancellationException) { throw e }

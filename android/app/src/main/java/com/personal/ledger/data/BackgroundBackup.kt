@@ -1,5 +1,9 @@
 package com.personal.ledger.data
 
+import android.app.Notification
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.os.SystemClock
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -12,6 +16,7 @@ import androidx.work.*
 import com.personal.ledger.MainActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -23,9 +28,9 @@ object BackgroundBackup {
     val lock = Mutex()
     fun prefs(context: Context, namespace: String) = context.getSharedPreferences("backup-job-$namespace",0)
     fun name(namespace: String) = "ledger-upload-$namespace"
-    private fun notificationId(namespace: String) = name(namespace).hashCode()
+    fun notificationId(namespace: String) = name(namespace).hashCode()
     fun active(context: Context, namespace: String) = prefs(context,namespace).getBoolean("active",false)
-    fun notify(context: Context, namespace: String, message: String, ongoing: Boolean) {
+    fun notification(context: Context, namespace: String, message: String, ongoing: Boolean): Notification {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("ledger-backup","电脑备份",NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(context,0,Intent(context,MainActivity::class.java),PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -34,7 +39,12 @@ object BackgroundBackup {
             .setContentTitle("个人记账 · 电脑备份").setContentText(message).setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setContentIntent(open).setOngoing(ongoing).setOnlyAlertOnce(true).setAutoCancel(!ongoing)
         if(ongoing) builder.addAction(0,"取消备份",cancel)
-        try { manager.notify(notificationId(namespace),builder.build()) } catch(_: SecurityException) { /* The in-app status remains visible if notifications are denied. */ }
+        return builder.build()
+    }
+    fun notify(context: Context, namespace: String, message: String, ongoing: Boolean, deferred: Boolean = false) {
+        val id = notificationId(namespace) + if(deferred || !ongoing) 1 else 0
+        try { context.getSystemService(NotificationManager::class.java).notify(id,notification(context,namespace,message,ongoing)) }
+        catch(_: SecurityException) { /* Status remains visible in the app. */ }
     }
     fun status(context: Context, namespace: String, text: String, active: Boolean, result: String? = null) {
         prefs(context,namespace).edit().putBoolean("active",active).putString("message",text).apply {
@@ -55,6 +65,7 @@ object BackgroundBackup {
         prefs(context,namespace).edit().putBoolean("active",false).putString("message","已取消后台备份，手机账目保留").apply()
         WorkManager.getInstance(context).cancelUniqueWork(name(namespace))
         context.getSystemService(NotificationManager::class.java).cancel(notificationId(namespace))
+        context.getSystemService(NotificationManager::class.java).cancel(notificationId(namespace)+1)
     }
 }
 
@@ -67,7 +78,30 @@ class BackupUploadWorker(context: Context, parameters: WorkerParameters): Corout
         val namespace = inputData.getString("namespace") ?: return@withContext Result.failure()
         val expected = inputData.getString("database") ?: return@withContext Result.failure()
         if(!BackgroundBackup.active(applicationContext,namespace)) return@withContext Result.success()
+        applicationContext.getSystemService(NotificationManager::class.java).cancel(BackgroundBackup.notificationId(namespace)+1)
         try {
+            val notification = BackgroundBackup.notification(applicationContext,namespace,"正在备份；电脑未连接时继续等待",true)
+            val foreground = if(Build.VERSION.SDK_INT >= 29) ForegroundInfo(BackgroundBackup.notificationId(namespace),notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                else ForegroundInfo(BackgroundBackup.notificationId(namespace),notification)
+            setForeground(foreground)
+        } catch(e: CancellationException) { throw e }
+        catch(_: Exception) { /* System may deny a later background foreground-service start; normal scheduled work can still proceed. */ }
+        // A bounded initial retry window avoids vendor batching immediately after
+        // the user leaves the screen. WorkManager persists any longer wait.
+        val retryDeadline = SystemClock.elapsedRealtime() + TimeUnit.MINUTES.toMillis(4)
+        for(attempt in 0 until 10) {
+            val result = uploadAttempt(namespace,expected)
+            if(result != Result.retry()) return@withContext result
+            if(!BackgroundBackup.active(applicationContext,namespace) || isStopped) return@withContext Result.success()
+            if(SystemClock.elapsedRealtime() >= retryDeadline) break
+            if(attempt < 9) delay(30000)
+        }
+        BackgroundBackup.notify(applicationContext,namespace,"电脑尚未连接，系统将继续安排后台重试",true,deferred=true)
+        Result.retry()
+    }
+
+    private suspend fun uploadAttempt(namespace: String, expected: String): Result {
+        return try {
             BackgroundBackup.lock.withLock {
                 val vault = AccountVault(applicationContext,namespace)
                 var account = vault.read() ?: throw IllegalArgumentException("请重新登录后备份")

@@ -17,7 +17,8 @@ def main():
     subprocess.run([sys.executable,'-m','PyInstaller','--noconfirm','--windowed','--onedir','--name','LedgerBackup',
         '--distpath',str(ROOT/'desktop/dist'),'--workpath',str(ROOT/'desktop/build'),'--specpath',str(ROOT/'.tools'),
         '--paths',str(ROOT/'desktop'),'--paths',str(ROOT/'server'),'--add-binary',str(binary)+';.',
-        '--collect-all','django','--collect-submodules','ledger','--collect-submodules','config',str(ROOT/'desktop/app.py')],
+        '--collect-all','django','--collect-submodules','ledger','--collect-submodules','config',
+        '--exclude-module','psycopg','--exclude-module','psycopg_binary',str(ROOT/'desktop/app.py')],
         cwd=ROOT,env=env,check=True)
     for path in (ROOT/'desktop/dist/LedgerBackup').rglob('*'):
         if path.is_file() and (path.suffix in ('.db','.sqlite3','.log') or path.name in ('computer.json','smtp.json','mail-config.json','server-secret.txt')):

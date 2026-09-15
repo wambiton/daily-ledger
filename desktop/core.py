@@ -1,4 +1,5 @@
 """Windows-only companion configuration and stable identity; never log credentials."""
+from contextlib import closing
 import json
 import os
 import secrets
@@ -6,6 +7,43 @@ import sqlite3
 import uuid
 from pathlib import Path
 import win32crypt
+
+
+def default_home():
+    return Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'PersonalLedgerBackup'
+
+
+def has_accounts(folder):
+    path = Path(folder) / 'accounts.sqlite3'
+    if not path.exists():
+        return False
+    # Failure to read an existing database must never be treated as an empty one.
+    with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)) as db:
+        return db.execute('SELECT EXISTS(SELECT 1 FROM ledger_user)').fetchone()[0] == 1
+
+
+def resolve_data_folder(explicit=None, executable=None, home=None):
+    if explicit:
+        return Path(explicit).resolve()
+    home = Path(home or default_home()).resolve()
+    selected = home / 'data-location.json'
+    if selected.exists():
+        folder = Path(json.loads(selected.read_text(encoding='utf-8'))['folder'])
+        if not (folder / 'accounts.sqlite3').is_file():
+            raise ValueError('原数据目录无法访问，请恢复目录后重试；未创建空账号库')
+        return folder.resolve()
+    if has_accounts(home):
+        return home
+    if executable:
+        for parent in Path(executable).resolve().parents:
+            legacy = parent / '电脑账目备份' / '账号服务'
+            if (parent / '启动电脑备份服务.cmd').is_file() and has_accounts(legacy):
+                return legacy.resolve()
+    return home
+
+
+def remember_data_folder(folder, home=None):
+    save(Path(home or default_home()) / 'data-location.json', {'folder': str(Path(folder).resolve())})
 
 
 def protect(value):
@@ -67,7 +105,7 @@ def summaries(folder):
     path = Path(folder) / 'accounts.sqlite3'
     if not path.exists():
         return []
-    with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=2) as db:
+    with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=2)) as db:
         return db.execute('''SELECT u.email, s.created_at, s.revision, s.payload
             FROM ledger_user u LEFT JOIN ledger_backupsnapshot s ON s.id =
             (SELECT id FROM ledger_backupsnapshot WHERE user_id=u.id ORDER BY revision DESC LIMIT 1)

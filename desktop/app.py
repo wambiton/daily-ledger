@@ -15,11 +15,13 @@ from pathlib import Path
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--serve', action='store_true')
-    parser.add_argument('--data-dir', default=str(Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'PersonalLedgerBackup'))
+    parser.add_argument('--data-dir')
     parser.add_argument('--port', type=int, default=18765)
     parser.add_argument('--smoke-test', action='store_true')
     parser.add_argument('--diagnostic-file')
     args = parser.parse_args()
+    from core import resolve_data_folder, remember_data_folder
+    args.data_dir = str(resolve_data_folder(args.data_dir, sys.executable if getattr(sys,'frozen',False) else __file__))
     if args.serve:
         from origin import run
         run(args.data_dir, args.port)
@@ -37,11 +39,15 @@ def main():
     except OSError:
         messagebox.showinfo('个人记账电脑端', '电脑端程序已运行，请从系统托盘打开。'); return
     computer = identity(folder)
+    if not args.smoke_test and (folder/'accounts.sqlite3').exists():
+        remember_data_folder(folder)
     root = tk.Tk(); root.title('个人记账 · 电脑备份'); root.geometry('850x770'); root.minsize(760,660)
     events = queue.Queue(); processes = []; stopped = threading.Event(); closing = False; started = False
     style = ttk.Style(); style.theme_use('clam'); style.configure('.', font=('Microsoft YaHei UI', 10))
     panel = ttk.Frame(root, padding=22); panel.pack(fill='both', expand=True)
     ttk.Label(panel, text='自己的账目，保存在自己的电脑', font=('Microsoft YaHei UI',16,'bold')).pack(anchor='w')
+    ttk.Label(panel,text=f'当前账号数据目录：{folder}',wraplength=780).pack(anchor='w',pady=4)
+    ttk.Label(panel,text='SMTP授权码仅用于发邮件，不是手机登录密码；账号保存在上述目录，不会定期过期。',wraplength=780).pack(anchor='w')
     status = tk.StringVar(value='填写发信邮箱后，点击启动外网备份。'); ttk.Label(panel,textvariable=status,wraplength=780).pack(anchor='w',pady=10)
     setup = ttk.LabelFrame(panel,text='QQ邮箱发信设置',padding=12); setup.pack(fill='x')
     current_email, _ = mail_config(folder)
@@ -120,6 +126,20 @@ def main():
     ttk.Button(buttons,text='启动外网备份',command=start).pack(side='left',padx=4)
     ttk.Button(buttons,text='停止服务',command=stop).pack(side='left',padx=4)
     ttk.Button(buttons,text='打开数据文件夹',command=lambda:os.startfile(folder)).pack(side='left',padx=4)
+    def choose_data():
+        from tkinter import filedialog
+        selected = filedialog.askdirectory(title='选择原账号数据目录（包含accounts.sqlite3）',initialdir=folder)
+        if not selected:return
+        target=Path(selected).resolve()
+        if target == folder:return
+        if not (target/'accounts.sqlite3').is_file():
+            messagebox.showerror('无法切换','该目录没有账号数据库，请选择原备份程序的数据目录。');return
+        if not messagebox.askyesno('切换账号数据目录','将停止当前服务并打开所选目录。两处原始数据均保留，不会合并或覆盖。是否继续？'):return
+        remember_data_folder(target)
+        command=[sys.executable] if getattr(sys,'frozen',False) else [sys.executable,str(Path(__file__).resolve())]
+        quit_app()
+        subprocess.Popen(command+['--data-dir',str(target)],creationflags=subprocess.CREATE_NO_WINDOW)
+    ttk.Button(buttons,text='选择原账号数据目录',command=choose_data).pack(side='left',padx=4)
     ttk.Label(panel,text='此电脑的账号备份',font=('Microsoft YaHei UI',12,'bold')).pack(anchor='w',pady=(12,5))
     table=ttk.Treeview(panel,columns=('email','time','count','result'),show='headings',height=6)
     for key,title,width in [('email','QQ邮箱',220),('time','最近成功备份时间',230),('count','账目笔数',90),('result','结果',100)]:

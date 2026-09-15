@@ -22,6 +22,42 @@ import java.util.UUID
 
 class AccountBackupFlowTest {
     @get:Rule val ui = createComposeRule()
+    @Test fun resetRequiresMatchingPasswordsAndNewPasswordLogsIn() {
+        val args=InstrumentationRegistry.getArguments()
+        Assume.assumeTrue(args.containsKey("reset_email"))
+        val app=ApplicationProvider.getApplicationContext<Application>()
+        val namespace="reset-test-${UUID.randomUUID()}"
+        val vm=BackupViewModel(app,namespace)
+        val holder=ViewModelStore().apply { put("backup",vm) }
+        try {
+            ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AccountScreen(vm) } } }
+            ui.onNodeWithTag("auth-mode-reset").performScrollTo().performClick()
+            ui.onNodeWithTag("server-address").performScrollTo().performTextInput("http://127.0.0.1:8767")
+            ui.onNodeWithTag("account-email").performScrollTo().performTextInput(args.getString("reset_email")!!)
+            ui.onNodeWithTag("account-password").performScrollTo().performTextInput("new-12345678")
+            ui.onNodeWithTag("account-password-confirm").performScrollTo().performTextInput("different123")
+            ui.onNodeWithTag("toggle-password-confirm").performScrollTo().performClick()
+            assertFalse(ui.onNodeWithTag("account-password-confirm").fetchSemanticsNode().config.contains(SemanticsProperties.Password))
+            ui.onNodeWithTag("toggle-password-confirm").performClick()
+            assertTrue(ui.onNodeWithTag("account-password-confirm").fetchSemanticsNode().config.contains(SemanticsProperties.Password))
+            ui.onNodeWithTag("account-code").performScrollTo().performTextInput("654321")
+            ui.onNodeWithTag("account-submit").performScrollTo().performClick()
+            ui.waitUntil(10000) { !vm.busy.value }
+            assertTrue(vm.message.value,vm.message.value.contains("两次输入的新密码不一致"))
+            ui.onNodeWithTag("account-password-confirm").performScrollTo().performTextReplacement("new-12345678")
+            ui.onNodeWithTag("account-submit").performScrollTo().performClick()
+            ui.waitUntil(30000) { !vm.busy.value }
+            assertTrue(vm.message.value,vm.message.value.startsWith("密码已重置"))
+            ui.onNodeWithTag("auth-mode-login").performScrollTo().performClick()
+            ui.onNodeWithTag("account-password").performScrollTo().performTextInput("new-12345678")
+            ui.onNodeWithTag("toggle-password").performScrollTo().performClick()
+            assertFalse(ui.onNodeWithTag("account-password").fetchSemanticsNode().config.contains(SemanticsProperties.Password))
+            ui.onNodeWithTag("account-submit").performScrollTo().performClick()
+            ui.waitUntil(30000) { !vm.busy.value }
+            assertNotNull(vm.message.value,vm.account.value)
+            assertEquals(args.getString("reset_email"),vm.account.value!!.getJSONObject("user").getString("email"))
+        } finally { holder.clear() }
+    }
     @Test fun loginUploadRestoreAndKeepOtherAccountIsolated() {
         val args = InstrumentationRegistry.getArguments()
         Assume.assumeTrue("Needs isolated local fixture server", args.containsKey("backup_email"))

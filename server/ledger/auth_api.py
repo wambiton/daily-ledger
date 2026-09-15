@@ -123,11 +123,13 @@ def reset(request, data):
         if not consume(email, 'reset', data.get('code')):
             return JsonResponse({'error': {'code': 'code_invalid', 'message': '验证码错误、过期或尝试过多'}}, status=400)
         user = User.objects.select_for_update().filter(email=email).first()
-        if user:
-            user.set_password(password)
-            user.save(update_fields=['password'])
-            sessions.revoke_all(user)
-    return {'status': 'ok'}
+        if user is None:
+            # Only disclose this after verifying ownership of the email address.
+            return JsonResponse({'error': {'code': 'account_not_found', 'message': '当前电脑数据目录没有此账号，请连接原来的电脑数据目录；密码未修改'}}, status=404)
+        user.set_password(password)
+        user.save(update_fields=['password'])
+        sessions.revoke_all(user)
+    return {'status': 'password_reset'}
 
 
 @endpoint('POST')

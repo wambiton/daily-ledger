@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -61,6 +62,9 @@ fun AccountScreen(vm: BackupViewModel) {
     var email by rememberSaveable { mutableStateOf("") }
     // Passwords/codes do not enter saved state or persistent preferences.
     var password by remember { mutableStateOf("") }
+    var passwordAgain by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
+    var showPasswordAgain by remember { mutableStateOf(false) }
     var code by remember { mutableStateOf("") }
     var mode by rememberSaveable { mutableStateOf("login") }
     var confirmation by rememberSaveable { mutableStateOf<String?>(null) }
@@ -74,21 +78,26 @@ fun AccountScreen(vm: BackupViewModel) {
                 singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("server-address"))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("login" to "登录", "register" to "注册", "reset" to "找回密码").forEach { (value, label) ->
-                    FilterChip(selected = mode == value, onClick = { mode = value; password = ""; code = "" }, enabled = !busy,
+                    FilterChip(selected = mode == value, onClick = { mode = value; password = ""; passwordAgain = ""; showPassword = false; showPasswordAgain = false; code = "" }, enabled = !busy,
                         label = { Text(label) }, modifier = Modifier.testTag("auth-mode-$value"))
                 }
             }
             OutlinedTextField(email, { email = it }, label = { Text("QQ邮箱") }, singleLine = true, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().testTag("account-email"))
             OutlinedTextField(password, { password = it }, label = { Text(if(mode == "reset") "新密码（至少8位）" else "密码（至少8位）") },
-                visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !busy,
+                visualTransformation = if(showPassword) VisualTransformation.None else PasswordVisualTransformation(), singleLine = true, enabled = !busy,
+                trailingIcon = { TextButton(onClick = { showPassword = !showPassword },modifier = Modifier.testTag("toggle-password")) { Text(if(showPassword) "隐藏" else "显示") } },
                 modifier = Modifier.fillMaxWidth().testTag("account-password"))
+            if(mode == "reset") OutlinedTextField(passwordAgain,{ passwordAgain = it },label = { Text("再次输入新密码") },
+                visualTransformation = if(showPasswordAgain) VisualTransformation.None else PasswordVisualTransformation(),singleLine = true,enabled = !busy,
+                trailingIcon = { TextButton(onClick = { showPasswordAgain = !showPasswordAgain },modifier = Modifier.testTag("toggle-password-confirm")) { Text(if(showPasswordAgain) "隐藏" else "显示") } },
+                modifier = Modifier.fillMaxWidth().testTag("account-password-confirm"))
             if(mode != "login") {
                 OutlinedTextField(code, { code = it }, label = { Text("邮箱验证码") }, singleLine = true, enabled = !busy,
                     modifier = Modifier.fillMaxWidth().testTag("account-code"))
                 OutlinedButton(onClick = { vm.sendCode(address, email, if(mode == "register") "register" else "reset") }, enabled = !busy) { Text("发送验证码") }
             }
-            Button(onClick = { vm.signIn(address, email, password, code, mode) { password = ""; code = "" } }, enabled = !busy,
+            Button(onClick = { vm.signIn(address, email, password, code, mode, passwordAgain) { password = ""; passwordAgain = ""; showPassword = false; showPasswordAgain = false; code = "" } }, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().testTag("account-submit")) { Text(when(mode) { "register" -> "注册并登录"; "reset" -> "重置密码"; else -> "登录账号" }) }
             Text("首次注册自动带入原本机账目；已有账号登录后可追加导入。原本机账本始终保留。", style = MaterialTheme.typography.bodySmall)
         } else {

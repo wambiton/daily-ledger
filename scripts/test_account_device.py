@@ -38,6 +38,10 @@ def main():
         User.objects.create_user(username=uuid.uuid4().hex, email=waiting_email, password='12345678', verified_at=timezone.now())
         register_email = 'register-' + uuid.uuid4().hex + '@qq.com'
         register_code = '654321'
+        reset_email = 'reset-' + uuid.uuid4().hex + '@qq.com'
+        User.objects.create_user(username=uuid.uuid4().hex,email=reset_email,password='old-12345678',verified_at=timezone.now())
+        EmailChallenge.objects.create(email=reset_email,purpose='reset',code_digest=code_digest(reset_email,'reset',register_code),
+            sent_at=timezone.now(),expires_at=timezone.now()+timedelta(minutes=10))
         EmailChallenge.objects.create(email=register_email, purpose='register', code_digest=code_digest(register_email, 'register', register_code),
             sent_at=timezone.now(), expires_at=timezone.now()+timedelta(minutes=10))
         connections.close_all()
@@ -87,11 +91,11 @@ def main():
                     except Exception: pass
             threading.Thread(target=allow_notification,daemon=True).start()
             result = subprocess.run([adb,'-s',serial,'shell','am','instrument','-w','-e','notClass','com.personal.ledger.ExternalBackupFlowTest','-e','backup_email',email,'-e','waiting_email',waiting_email,'-e','register_email',register_email,'-e','register_code',register_code,
-                'com.personal.ledger.test/androidx.test.runner.AndroidJUnitRunner'],capture_output=True,timeout=240)
+                '-e','reset_email',reset_email,'com.personal.ledger.test/androidx.test.runner.AndroidJUnitRunner'],capture_output=True,timeout=240)
             permission_stop.set()
             output = result.stdout.decode('utf-8',errors='replace')
             print(output)
-            if result.returncode or 'OK (14 tests)' not in output or 'FAILURES' in output:
+            if result.returncode or 'OK (15 tests)' not in output or 'FAILURES' in output:
                 raise RuntimeError('Device suite failed')
         finally:
             subprocess.run([adb,'-s',serial,'reverse','--remove','tcp:8767'],capture_output=True)

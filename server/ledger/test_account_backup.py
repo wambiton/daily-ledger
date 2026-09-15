@@ -104,6 +104,18 @@ class AccountBackupTests(TestCase):
         self.assertIsNone(sessions.authenticate(account['access_token']))
         self.assertIsNone(sessions.refresh(account['refresh_token']))
         self.assertEqual(self.post('auth/login/', {'email': '123456@qq.com', 'password': self.password}).status_code, 401)
+        self.assertEqual(result.json()['status'], 'password_reset')
+        self.assertEqual(self.post('auth/login/', {'email': '123456@qq.com', 'password': 'new-password-456'}).status_code, 200)
+
+    def test_reset_unknown_verified_email_never_reports_success_or_changes_other_accounts(self):
+        account = self.account()
+        before = list(User.objects.values('id','password'))
+        missing = 'missing@qq.com'
+        result = self.post('auth/reset/', {'email': missing, 'password': 'abcdefgh', 'code': self.code(missing,purpose='reset')})
+        self.assertEqual(result.status_code,404)
+        self.assertEqual(result.json()['error']['code'],'account_not_found')
+        self.assertEqual(before,list(User.objects.values('id','password')))
+        self.assertIsNotNone(sessions.authenticate(account['access_token']))
 
     def test_login_is_rate_limited(self):
         for _ in range(10):

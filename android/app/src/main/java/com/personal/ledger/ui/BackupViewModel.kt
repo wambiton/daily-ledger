@@ -119,16 +119,20 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         client(address).call("auth/code/", JSONObject().put("email", email).put("purpose", purpose))
         message.value = "验证码已发送，10分钟内有效；60秒后可重新发送"
     }
-    fun signIn(address: String, email: String, password: String, code: String, mode: String, complete: () -> Unit = {}) = run {
+    fun signIn(address: String, email: String, password: String, code: String, mode: String, newPasswordAgain: String? = null, complete: () -> Unit = {}) = run {
         require(mode in listOf("login", "register", "reset"))
         require(password.codePointCount(0, password.length) >= 8) { "密码至少需要8个字符，不限制字符类型" }
+        require(mode != "reset" || password == newPasswordAgain) { "两次输入的新密码不一致，请重新确认" }
         if(mode != "login") require(code.matches(Regex("[0-9]{6}"))) { "请输入邮箱收到的6位验证码" }
         val client = client(address)
         val body = JSONObject().put("email", email).put("password", password).put("code", code)
         // Registration is not replayed automatically: a lost response may already have created the account.
         val result = if(mode == "login") waitForComputer { client.call("auth/login/", body) }
             else { waitForComputer { client.call("health/") }; client.call("auth/$mode/", body) }
-        if(mode == "reset") message.value = "密码已重置，请使用新密码登录"
+        if(mode == "reset") {
+            require(result.optString("status") == "password_reset") { "电脑端版本较旧，无法确认密码修改结果，请先更新电脑端" }
+            message.value = "密码已重置，请使用新密码登录当前电脑上的账号"
+        }
         else {
             result.put("server", client.base)
             pairVault.read()?.takeIf { it.getString("server") == client.base }?.let {

@@ -30,3 +30,4 @@ desktop/dist/
 *.spec
 用户体验/*.zip
 用户体验/LedgerBackup/
+用户体验/历史版本/

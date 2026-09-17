@@ -1,5 +1,6 @@
 """Assemble a data-free portable trial with notices and rebuildable companion sources."""
 import hashlib
+import re
 from importlib.metadata import distributions
 from pathlib import Path
 import shutil
@@ -12,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def main():
+    version=re.search(r'versionName = "([^"]+)"',(ROOT/'android/app/build.gradle.kts').read_text(encoding='utf-8')).group(1).split('-')[0]
     output = ROOT / '交付包'
     output.mkdir(exist_ok=True)
     bundle = ROOT / 'desktop/dist/LedgerBackup'
@@ -65,17 +67,18 @@ def main():
             tcl_encoding = path.parent == stage/'_internal/_tcl_data/encoding'
             if path.is_file() and (path.suffix.lower() in ('.db','.sqlite3','.log','.keystore','.jks') or (path.suffix.lower() == '.enc' and not tcl_encoding) or path.name in ('computer.json','smtp.json','mail-config.json','server-secret.txt')):
                 raise RuntimeError('Runtime or private data found: '+str(path.relative_to(stage)))
-        archive = output/'个人记账电脑端-0.5.0-试用.zip'
+        archive = output/f'个人记账电脑端-{version}-试用.zip'
         with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as zipped:
             for path in stage.rglob('*'):
                 if path.is_file():zipped.write(path,path.relative_to(stage.parent))
         with zipfile.ZipFile(archive) as zipped:
             if zipped.testzip() is not None:raise RuntimeError('Archive integrity failed')
-    apk=output/'个人记账-0.5.0-试用.apk'
+    apk=output/f'个人记账-{version}-试用.apk'
     shutil.copy2(required[1],apk)
     shutil.copy2(ROOT/'docs/电脑端外网备份使用说明.md',output/'使用说明.md')
     (output/'验收状态.txt').write_text(
-        '2026-09-15：20项JVM、14项真机回归、32项服务端、2项电脑配置测试通过。\n'
+        '2026-09-17：20项JVM、18项真机回归、33项服务端、4项电脑配置测试通过。\n'
+        '修复账号目录误连、密码重置虚假成功、扫码后手机账本不可见；现有手机账本逐行核对保留。\n'
         '流量配对、登录、后台重试上传已实际成功；完整外网换手机/换电脑专项尚未通过，免费通道连接不稳定。\n'
         '本包仅供试用，不代表正式发布验收完成。\n',encoding='utf-8')
     (output/'SHA256SUMS.txt').write_text('\n'.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name for p in (archive,apk))+'\n',encoding='utf-8')

@@ -31,3 +31,5 @@ payload包含format_version=1、categories、entries，可选import_sources（�
 二维码JSON：type=personal-ledger-pair、version=1、server（HTTPS根地址）、computer_id（UUID）、pair_key（随机能力密钥）。不包含账号密码、邮箱授权码或账目。手机将配对信息加密保存，不在请求URL中传递密钥。旧USB独立服务不自动变成公网服务。
 
 后台上传保留operation_id和快照供重试，使用数据库身份核对防止切换电脑误传；离线/5xx/429重试，认证/配对/版本冲突需要用户处理。取消不删除账目，已到达电脑的请求不能撤回。
+
+2026-09-17密码重置：验证邮箱验证码后若当前目录无账号，返回404 account_not_found，明确密码未修改；实际成功返回status=password_reset。新版手机仅接受此明确成功状态。手机本地账本选择独立于登录状态，扫码切换不删除原账本，旧账号数据通过本地目录引用保留。

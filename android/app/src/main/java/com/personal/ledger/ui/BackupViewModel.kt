@@ -18,6 +18,10 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
     private val vault = AccountVault(app, vaultName)
     private val pairVault = AccountVault(app, "$vaultName-pair")
     private val carryVault = AccountVault(app, "$vaultName-carry")
+    private val phoneBooks = PhoneLedgers(app,vaultName)
+    val savedBooks = MutableStateFlow<List<JSONObject>>(emptyList())
+    val selectedBook = MutableStateFlow<JSONObject?>(null)
+    val pendingPair = MutableStateFlow<JSONObject?>(null)
     val account = MutableStateFlow<JSONObject?>(null)
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow("")
@@ -42,6 +46,12 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         if(uploading.value) message.value = jobPrefs.getString("message", "正在后台等待电脑") ?: ""
         try {
             account.value = vault.read()
+            account.value?.let { phoneBooks.remember(phoneBooks.descriptor(it)) }
+            val carried = carryVault.read()?.apply { if(!has("label")) put("label","扫码前的账号账本") }
+            carried?.let { phoneBooks.remember(it) }
+            selectedBook.value = phoneBooks.selected() ?: carried?.takeIf { account.value == null }
+            selectedBook.value?.let { phoneBooks.select(it) }
+            savedBooks.value = phoneBooks.books()
             account.value?.let { a -> viewModelScope.launch {
                 val name = databaseName(a)
                 val db = LedgerDatabases.acquire(app, name)
@@ -53,10 +63,30 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         } catch(_: Exception) { message.value = "登录凭据无法读取，请重新登录；本地账目仍保留" }
     }
     fun databaseName(a: JSONObject) = ComputerPair.databaseName(a)
+    fun selectBook(book: JSONObject) {
+        if(busy.value || uploading.value) return
+        phoneBooks.select(book); selectedBook.value = book
+        message.value = "正在查看手机保存的账本，可继续记账；未连接账号时不会上传"
+    }
+    fun selectOriginalBook() = selectBook(JSONObject().put("database",localDatabaseName).put("owner","local-preview").put("label","原本机账本"))
+    fun selectAccountBook() { phoneBooks.select(null); selectedBook.value = null }
+    fun viewingAccount(): Boolean = account.value?.let { a -> selectedBook.value?.getString("database")?.let { it == databaseName(a) } ?: true } ?: false
+    fun dismissPair() { pendingPair.value = null }
     fun pairComputer(contents: String) = run {
         val candidate = ComputerPair.parse(contents)
         val verified = ComputerPair.client(candidate).call("computer/")
         require(verified.getString("computer_id") == candidate.getString("computer_id")) { "电脑身份不匹配，请重新扫码" }
+        if(account.value != null && account.value!!.optString("computer_id") != candidate.getString("computer_id")) {
+            pendingPair.value = candidate
+            message.value = "请确认是否更换电脑，当前手机账本将保留"
+        } else applyPair(candidate)
+    }
+    fun confirmPair() = run {
+        val candidate = requireNotNull(pendingPair.value)
+        applyPair(candidate)
+        pendingPair.value = null
+    }
+    private suspend fun applyPair(candidate: JSONObject) {
         BackgroundBackup.lock.withLock {
         // A background upload may have rotated the session while this screen stayed open.
         val old = vault.read()
@@ -67,9 +97,13 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             message.value = "电脑连接地址已更新，原账号和账目保留"
         } else {
             cancelUpload()
-            if(old != null) carryVault.write(JSONObject().put("database",databaseName(old)).put("owner",owner(old)))
+            val retained = old?.let { phoneBooks.descriptor(it) } ?: selectedBook.value
+            if(retained != null) {
+                carryVault.write(retained);phoneBooks.remember(retained);phoneBooks.select(retained);selectedBook.value = retained
+            }
             vault.clear(); account.value = null
-            message.value = "电脑已配对，请登录或注册。新电脑注册时会带入手机当前账目"
+            savedBooks.value = phoneBooks.books()
+            message.value = "电脑已配对，尚未登录或备份。原账本仍可查看和记账，请登录后备份"
         }
         pairVault.write(candidate)
         server.value = candidate.getString("server")
@@ -77,7 +111,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         }
     }
     private fun owner(a: JSONObject) = a.getJSONObject("user").getString("id")
-    private fun saveAccount(a: JSONObject) { vault.write(a); account.value = a }
+    private fun saveAccount(a: JSONObject) { vault.write(a); account.value = a;phoneBooks.remember(phoneBooks.descriptor(a));savedBooks.value = phoneBooks.books() }
     private fun run(block: suspend () -> Unit) {
         if(busy.value) return
         busy.value = true; message.value = ""
@@ -139,7 +173,9 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
                 result.put("computer_id",it.getString("computer_id")).put("pair_key",it.getString("pair_key"))
             }
             val carry = carryVault.read()
-            if(carry?.optString("owner") == owner(result)) result.put("database_name",carry.getString("database"))
+            val retained = carry?.takeIf { it.optString("owner")==owner(result) }
+                ?: phoneBooks.books().firstOrNull { it.optString("owner")==owner(result) }
+            retained?.let { result.put("database_name",it.getString("database")) }
             complete()
             suspend fun fetch(path: String): JSONObject = waitForComputer {
                 try { client.call(path, token = result.getString("access_token")) }
@@ -171,6 +207,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
                     "登录成功。手机有未备份修改，已保留；电脑另有更新版本，请勿覆盖上传" else "登录成功，账号账目已就绪"
                 if(db.ledger().backupState(owner(result)) == null) db.ledger().setBackupState(SyncState(owner(result)))
                 saveAccount(result)
+                selectAccountBook()
                 carryVault.clear()
             } finally { LedgerDatabases.release(name) }
         }
@@ -206,6 +243,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
     fun upload() {
         val current = account.value ?: return
         if(busy.value || uploading.value) return
+        if(!viewingAccount()) { message.value = "当前查看的是另一份手机账本，请先追加导入当前账号再备份";return }
         uploading.value = true
         BackgroundBackup.enqueue(app,vaultName,current)
     }
@@ -222,8 +260,14 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         finally { LedgerDatabases.release(localDatabaseName) }
     }
     fun dismissImport() { pendingImport = null; duplicateCount.value = 0 }
-    fun importLocal(allowDuplicates: Boolean = false) = run {
-        val payload = if(allowDuplicates) requireNotNull(pendingImport) { "请重新选择导入" } else localPayload()
+    fun importLocal(allowDuplicates: Boolean = false, fromSelected: Boolean = false) = run {
+        val payload = if(allowDuplicates) requireNotNull(pendingImport) { "请重新选择导入" } else if(fromSelected) {
+            val selected = requireNotNull(selectedBook.value)
+            require(selected.getString("database") != account.value?.let { databaseName(it) }) { "已经是当前账号账本，无需导入" }
+            val name = selected.getString("database")
+            val source = LedgerDatabases.acquire(app,name)
+            try { BackupStore(source,selected.getString("owner")).export() } finally { LedgerDatabases.release(name) }
+        } else localPayload()
         require(payload.getJSONArray("entries").length() > 0) { "原本机账本没有账目" }
         store { store, _, _ ->
             try {
@@ -245,7 +289,11 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             catch(e: CancellationException) { throw e }
             catch(_: Exception) { /* Local sign-out remains possible while the PC is off. */ }
         }
-        dismissImport(); vault.clear(); account.value = null; message.value = "已退出，账号账目仍保存在手机；重新登录可继续使用"
+        a?.let { phoneBooks.remember(phoneBooks.descriptor(it)) }
+        dismissImport(); vault.clear(); account.value = null
+        val original=JSONObject().put("database",localDatabaseName).put("owner","local-preview").put("label","原本机账本")
+        phoneBooks.select(original);selectedBook.value=original;savedBooks.value = phoneBooks.books()
+        message.value = "已退出，账号账本仍可从手机账本列表打开，无需联网"
         }
     }
 }

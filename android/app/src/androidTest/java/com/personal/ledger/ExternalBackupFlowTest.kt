@@ -113,6 +113,7 @@ class ExternalBackupFlowTest {
             try { runBlocking { assertEquals(2345L,restored.ledger().entrySnapshot(owner).single().amountFen) } }
             finally { LedgerDatabases.release(name) }
             InstrumentationRegistry.getInstrumentation().runOnMainSync { vm.pairComputer(nextQr) };until { !vm.busy.value }
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { vm.confirmPair() };until { !vm.busy.value }
             assertNull(vm.account.value)
             InstrumentationRegistry.getInstrumentation().runOnMainSync { vm.signIn(vm.server.value,args.getString("external_email")!!,"12345678",args.getString("external_code")!!,"register") }
             until { !vm.busy.value }

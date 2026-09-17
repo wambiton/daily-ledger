@@ -95,7 +95,7 @@ def main():
             permission_stop.set()
             output = result.stdout.decode('utf-8',errors='replace')
             print(output)
-            if result.returncode or 'OK (15 tests)' not in output or 'FAILURES' in output:
+            if result.returncode or 'OK (18 tests)' not in output or 'FAILURES' in output:
                 raise RuntimeError('Device suite failed')
         finally:
             subprocess.run([adb,'-s',serial,'reverse','--remove','tcp:8767'],capture_output=True)

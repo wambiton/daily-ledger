@@ -22,6 +22,23 @@ import java.util.UUID
 
 class AccountBackupFlowTest {
     @get:Rule val ui = createComposeRule()
+    @Test fun codeRequestDistinguishesOfflineComputerFromMailAuthenticationFailure() {
+        Assume.assumeTrue(InstrumentationRegistry.getArguments().containsKey("backup_email"))
+        val app=ApplicationProvider.getApplicationContext<Application>()
+        val vm=BackupViewModel(app,"code-test-${UUID.randomUUID()}")
+        val holder=ViewModelStore().apply { put("vm",vm) }
+        try {
+            ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AccountScreen(vm) } } }
+            ui.runOnIdle { vm.sendCode("http://127.0.0.1:8768","synthetic@qq.com","reset") }
+            ui.waitUntil(30000) { !vm.busy.value }
+            assertTrue(vm.message.value,vm.message.value.contains("未能连接电脑"))
+            assertTrue(vm.message.value.contains("重新扫码"))
+            ui.runOnIdle { vm.sendCode("http://127.0.0.1:8767","synthetic@qq.com","reset") }
+            ui.waitUntil(30000) { !vm.busy.value }
+            assertTrue(vm.message.value,vm.message.value.contains("QQ邮箱认证被拒绝"))
+            assertFalse(vm.message.value.contains("验证码已发送"))
+        } finally { holder.clear() }
+    }
     @Test fun resetRequiresMatchingPasswordsAndNewPasswordLogsIn() {
         val args=InstrumentationRegistry.getArguments()
         Assume.assumeTrue(args.containsKey("reset_email"))

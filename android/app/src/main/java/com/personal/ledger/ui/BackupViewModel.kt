@@ -150,8 +150,18 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         return client
     }
     fun sendCode(address: String, email: String, purpose: String) = run {
-        client(address).call("auth/code/", JSONObject().put("email", email).put("purpose", purpose))
-        message.value = "验证码已发送，10分钟内有效；60秒后可重新发送"
+        try {
+            client(address).call("auth/code/", JSONObject().put("email", email).put("purpose", purpose))
+            message.value = "验证码已发送，10分钟内有效；60秒后可重新发送"
+        } catch(_: java.io.IOException) {
+            message.value = "未能连接电脑，无法请求验证码。请在电脑保存设置并等待连接成功、二维码出现，再用手机重新扫码后重试；无需重复填写授权码"
+        } catch(e: BackupApiException) {
+            message.value = when {
+                e.status == 403 -> "电脑配对已失效，请扫描电脑当前显示的二维码后重新发送验证码"
+                e.status == 404 || e.status == 502 || e.status == 504 -> "电脑连接地址暂不可用，请等待电脑连接成功并重新扫码后发送验证码"
+                else -> e.message ?: "验证码发送失败，请查看电脑发信配置状态"
+            }
+        }
     }
     fun signIn(address: String, email: String, password: String, code: String, mode: String, newPasswordAgain: String? = null, complete: () -> Unit = {}) = run {
         require(mode in listOf("login", "register", "reset"))

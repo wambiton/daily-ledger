@@ -51,6 +51,10 @@ def main():
         application = get_wsgi_application()
         waiting_failures = [1]
         def wrapped(environ, start_response):
+            if environ.get('PATH_INFO') == '/api/v1/auth/code/':
+                start_response('503 Service Unavailable',[('Content-Type','application/json')])
+                yield json.dumps({'error':{'message':'QQ邮箱认证被拒绝，请检查电脑已保存的授权码'}}).encode()
+                return
             if environ.get('PATH_INFO') == '/api/v1/auth/login/':
                 body = environ['wsgi.input'].read(int(environ.get('CONTENT_LENGTH') or 0))
                 environ['wsgi.input'] = io.BytesIO(body)
@@ -95,7 +99,7 @@ def main():
             permission_stop.set()
             output = result.stdout.decode('utf-8',errors='replace')
             print(output)
-            if result.returncode or 'OK (18 tests)' not in output or 'FAILURES' in output:
+            if result.returncode or 'OK (19 tests)' not in output or 'FAILURES' in output:
                 raise RuntimeError('Device suite failed')
         finally:
             subprocess.run([adb,'-s',serial,'reverse','--remove','tcp:8767'],capture_output=True)

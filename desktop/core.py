@@ -92,6 +92,31 @@ def store_mail(folder, email, password):
     save(Path(folder) / 'smtp.json', {'email': email, 'protected': protect(password.strip())})
 
 
+def saved_mail_status(folder):
+    try:
+        email, password = mail_config(folder)
+        return '授权码已保存，无需重复输入；尚未验证发信配置。' if email and password else '尚未配置授权码。'
+    except Exception:
+        return '已保存的发信配置无法读取，请重新填写并保存。'
+
+
+def verify_mail(folder):
+    import smtplib
+    import ssl
+    try:
+        email, password = mail_config(folder)
+        if not email or not password:return '尚未配置授权码，请先保存设置。'
+        with smtplib.SMTP_SSL('smtp.qq.com',465,timeout=15,context=ssl.create_default_context()) as smtp:
+            smtp.login(email,password)
+        return '已保存；QQ邮箱认证通过。验证码是否收取成功仍以实际发送为准。'
+    except smtplib.SMTPAuthenticationError:
+        return '已保存，但QQ邮箱认证失败；请确认SMTP已开启，并更新授权码。'
+    except (OSError,smtplib.SMTPException):
+        return '已保存，但无法连接QQ邮箱服务器，请检查电脑网络后重试验证。'
+    except Exception:
+        return '发信配置验证失败，请重新检查已保存的设置。'
+
+
 def pairing(url, computer):
     from urllib.parse import urlparse
     parsed = urlparse(url)

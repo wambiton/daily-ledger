@@ -32,7 +32,7 @@ def main():
     from PIL import Image, ImageTk, ImageDraw
     import qrcode
     import pystray
-    from core import identity, mail_config, store_mail, pairing, summaries
+    from core import identity, mail_config, store_mail, pairing, summaries, saved_mail_status, verify_mail
     folder = Path(args.data_dir).resolve(); folder.mkdir(parents=True, exist_ok=True)
     lock = (folder/'desktop.lock').open('a+b'); lock.seek(0); lock.write(b'0'); lock.flush(); lock.seek(0)
     try: msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
@@ -48,7 +48,7 @@ def main():
     ttk.Label(panel, text='自己的账目，保存在自己的电脑', font=('Microsoft YaHei UI',16,'bold')).pack(anchor='w')
     ttk.Label(panel,text=f'当前账号数据目录：{folder}',wraplength=780).pack(anchor='w',pady=4)
     ttk.Label(panel,text='SMTP授权码仅用于发邮件，不是手机登录密码；账号保存在上述目录，不会定期过期。',wraplength=780).pack(anchor='w')
-    status = tk.StringVar(value='填写发信邮箱后，点击启动外网备份。'); ttk.Label(panel,textvariable=status,wraplength=780).pack(anchor='w',pady=10)
+    status = tk.StringVar(value='连接未启动；保存发信设置会自动启动连接服务。'); ttk.Label(panel,textvariable=status,wraplength=780).pack(anchor='w',pady=10)
     setup = ttk.LabelFrame(panel,text='QQ邮箱发信设置',padding=12); setup.pack(fill='x')
     current_email, _ = mail_config(folder)
     email = tk.StringVar(value=current_email); password = tk.StringVar()
@@ -56,11 +56,35 @@ def main():
     ttk.Entry(setup,textvariable=email,width=28).grid(row=0,column=1,padx=5)
     ttk.Label(setup,text='SMTP授权码').grid(row=0,column=2,padx=5)
     ttk.Entry(setup,textvariable=password,show='●',width=22).grid(row=0,column=3,padx=5)
+    mail_status = tk.StringVar(value=saved_mail_status(folder))
+    ttk.Label(setup,textvariable=mail_status,wraplength=710).grid(row=2,column=0,columnspan=4,sticky='w',pady=5)
+    mail_revision = 0
     def save_mail():
-        if started: messagebox.showinfo('邮箱设置','请先停止服务，再保存邮箱设置。'); return
-        try: store_mail(folder,email.get(),password.get()); password.set('');status.set('发信设置已加密保存到这台电脑。')
-        except Exception: messagebox.showerror('无法保存','请检查QQ邮箱和SMTP授权码。')
+        nonlocal mail_revision
+        try:
+            saved_email, saved_password = mail_config(folder)
+            if password.get().strip():
+                store_mail(folder,email.get(),password.get())
+            elif email.get().strip().lower() != saved_email or not saved_password:
+                raise ValueError('missing credentials')
+            elif started:
+                mail_status.set(saved_mail_status(folder));return
+        except Exception:
+            mail_status.set('保存失败；请检查邮箱及授权码，原设置未清空。');return
+        mail_revision += 1
+        password.set('')
+        mail_status.set(saved_mail_status(folder))
+        if started:stop()
+        start()
+    def check_mail():
+        revision = mail_revision
+        mail_status.set('正在验证已保存的发信配置…')
+        def validate():
+            result=verify_mail(folder)
+            events.put(('mail',revision,result))
+        threading.Thread(target=validate,daemon=True).start()
     ttk.Button(setup,text='保存设置',command=save_mail).grid(row=1,column=3,sticky='e',pady=5)
+    ttk.Button(setup,text='验证发信配置',command=check_mail).grid(row=1,column=1,sticky='w',pady=5)
     body = ttk.Frame(panel); body.pack(fill='x',pady=10)
     qr_label = ttk.Label(body,text='启动成功后在这里显示配对二维码',width=40,anchor='center'); qr_label.pack(side='left')
     tips = ttk.Frame(body,padding=12);tips.pack(side='left',fill='both',expand=True)
@@ -76,24 +100,24 @@ def main():
         processes.clear();started=False
         qr_label.configure(image='',text='已停止，启动后生成新的配对二维码');qr_label.image=None
         status.set('备份服务已停止，手机账目仍保留。')
-    def spawn(command):
-        if stopped.is_set(): raise RuntimeError('stopped')
+    def spawn(command, token):
+        if token.is_set(): raise RuntimeError('stopped')
         child=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,creationflags=subprocess.CREATE_NO_WINDOW)
         processes.append(child)
-        if stopped.is_set():child.terminate();raise RuntimeError('stopped')
+        if token.is_set():child.terminate();raise RuntimeError('stopped')
         return child
-    def connect():
+    def connect(token):
         try:
             if getattr(sys,'frozen',False): command=[sys.executable]
             else: command=[sys.executable,str(Path(__file__).resolve())]
-            server = spawn(command+['--serve','--data-dir',str(folder),'--port',str(args.port)])
+            server = spawn(command+['--serve','--data-dir',str(folder),'--port',str(args.port)],token)
             # Drain without logging tokens or personal data.
             def drain():
                 for _ in iter(server.stdout.readline,b''): pass
             threading.Thread(target=drain,daemon=True).start()
             request=urllib.request.Request(f'http://127.0.0.1:{args.port}/api/v1/computer/',headers={'X-Ledger-Pair':computer['pair_key']})
             for _ in range(40):
-                if stopped.wait(.5):return
+                if token.wait(.5):return
                 if server.poll() is not None:raise RuntimeError('server')
                 try:
                     with urllib.request.urlopen(request,timeout=2) as r:
@@ -102,26 +126,32 @@ def main():
             else:raise RuntimeError('server')
             resources=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parent.parent))
             executable=resources/'cloudflared.exe' if getattr(sys,'frozen',False) else resources/'.tools/cloudflared.exe'
-            tunnel=spawn([str(executable),'tunnel','--no-autoupdate','--protocol','http2','--http-host-header','localhost','--url',f'http://127.0.0.1:{args.port}'])
+            tunnel=spawn([str(executable),'tunnel','--no-autoupdate','--protocol','http2','--http-host-header','localhost','--url',f'http://127.0.0.1:{args.port}'],token)
             url=None; registered=False
             for raw in iter(tunnel.stdout.readline,b''):
-                if stopped.is_set():return
+                if token.is_set():return
                 line=raw.decode(errors='replace')
                 match=re.search(r'https://[a-z0-9-]+\.trycloudflare\.com',line)
                 if match:url=match.group()
                 if 'Registered tunnel connection' in line:registered=True
                 if url and registered:
-                    events.put(('ready',url));url=None
-            if not stopped.is_set():events.put(('error','外网连接已断开，请停止后重新启动并重新扫码。'))
+                    events.put((token,'ready',url));url=None
+            if not token.is_set():events.put((token,'error','外网连接已断开，请停止后重新启动并重新扫码。'))
         except Exception:
-            if not stopped.is_set():events.put(('error','连接未成功。请检查网络、端口是否被占用，然后停止并重试。'))
+            if not token.is_set():events.put((token,'error','连接未成功。请检查网络、端口是否被占用，然后停止并重试。'))
     def start():
-        nonlocal started
+        nonlocal started, stopped
         if started:return
-        if password.get():save_mail()
+        if password.get():
+            save_mail();return
         if not mail_config(folder)[0] and not messagebox.askyesno('尚未配置发信邮箱','可先测试连接，但不能发送注册验证码。是否继续？'):return
-        stopped.clear();started=True;status.set('正在启动电脑服务并建立免费外网连接…')
-        threading.Thread(target=connect,daemon=True).start()
+        stopped=threading.Event();started=True;status.set('正在启动电脑服务并建立外网连接，请等待二维码…')
+        token=stopped
+        threading.Thread(target=connect,args=(token,),daemon=True).start()
+        def connection_timeout():
+            if token is stopped and not token.is_set() and not getattr(qr_label,'image',None):
+                stop();status.set('连接失败：外网通道建立超时。授权码已保留，请检查电脑网络后重新启动连接。')
+        root.after(90000,connection_timeout)
     buttons=ttk.Frame(panel);buttons.pack(fill='x',pady=5)
     ttk.Button(buttons,text='启动外网备份',command=start).pack(side='left',padx=4)
     ttk.Button(buttons,text='停止服务',command=stop).pack(side='left',padx=4)
@@ -167,17 +197,22 @@ def main():
     def pump():
         if closing:return
         while not events.empty():
-            kind,value=events.get()
-            if stopped.is_set():continue
+            token,kind,value=events.get()
+            if token == 'mail':
+                if kind == mail_revision:mail_status.set(value)
+                continue
+            if token is not stopped or token.is_set():continue
             if kind=='ready':
                 picture=qrcode.make(pairing(value,computer)).resize((290,290),Image.Resampling.NEAREST)
                 photo=ImageTk.PhotoImage(picture);qr_label.configure(image=photo,text='');qr_label.image=photo
                 status.set('外网通道已连接，请用手机扫码。关闭窗口后仍在系统托盘运行。')
-            else:status.set(value)
+            else:
+                stop();status.set(value)
         root.after(200,pump)
     refresh();pump()
     if args.smoke_test:root.after(1500,quit_app)
-    root.mainloop()
+    try:root.mainloop()
+    finally:lock.close()
 
 if __name__=='__main__':
     try:

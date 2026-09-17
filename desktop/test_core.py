@@ -3,10 +3,26 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from core import identity, store_mail, mail_config, pairing, resolve_data_folder, remember_data_folder
+from core import identity, store_mail, mail_config, pairing, resolve_data_folder, remember_data_folder, saved_mail_status, verify_mail
+from unittest.mock import patch
+import smtplib
 import sqlite3
 
 class ConfigurationTests(unittest.TestCase):
+    def test_mail_saved_state_and_validation_are_distinct(self):
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertIn('尚未配置',saved_mail_status(folder))
+            store_mail(folder,'fixture@qq.com','synthetic-code')
+            self.assertIn('已保存',saved_mail_status(folder))
+            self.assertIn('尚未验证',saved_mail_status(folder))
+            with patch('smtplib.SMTP_SSL') as smtp:
+                self.assertIn('认证通过',verify_mail(folder))
+                smtp.return_value.__enter__.return_value.login.assert_called_once_with('fixture@qq.com','synthetic-code')
+                smtp.return_value.__enter__.return_value.sendmail.assert_not_called()
+            with patch('smtplib.SMTP_SSL',side_effect=smtplib.SMTPAuthenticationError(535,b'secret-detail')):
+                result=verify_mail(folder)
+                self.assertIn('认证失败',result);self.assertNotIn('secret-detail',result)
+            self.assertEqual(mail_config(folder),('fixture@qq.com','synthetic-code'))
     def test_packaged_entry_reuses_legacy_accounts_without_replacing_either_database(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);home=root/'appdata';legacy=root/'project/电脑账目备份/账号服务'

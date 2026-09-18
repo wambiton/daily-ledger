@@ -50,6 +50,11 @@ data class ImportedSource(val owner: String, val sourceId: String)
 
 @Dao
 interface LedgerDao {
+    @Query("SELECT * FROM entries WHERE owner = :owner ORDER BY createdAt, id") suspend fun allEntries(owner: String): List<Entry>
+    @Query("SELECT * FROM entries WHERE owner = :owner AND deletedAt IS NOT NULL ORDER BY deletedAt DESC") fun trash(owner: String): Flow<List<Entry>>
+    @Query("DELETE FROM entries WHERE owner = :owner AND deletedAt IS NOT NULL AND deletedAt <= :cutoff") suspend fun purgeTrash(owner: String, cutoff: Long): Int
+    @Query("SELECT COUNT(DISTINCT entityId) FROM outbox WHERE owner = :owner AND entityType = 'entry'") fun pendingEntries(owner: String): Flow<Int>
+    @Query("SELECT * FROM sync_state WHERE owner = :owner") fun observeBackupState(owner: String): Flow<SyncState?>
     @Query("SELECT sourceId FROM imported_sources WHERE owner = :owner") suspend fun importedSources(owner: String): List<String>
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun markImported(source: ImportedSource)
     @Query("DELETE FROM imported_sources WHERE owner = :owner") suspend fun clearImported(owner: String)

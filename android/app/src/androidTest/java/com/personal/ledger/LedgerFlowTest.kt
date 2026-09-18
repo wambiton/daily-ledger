@@ -47,6 +47,12 @@ class LedgerFlowTest {
         ui.onNodeWithText("删除这笔账目").performClick()
         ui.onNodeWithText("删除", useUnmergedTree = true).performClick()
         ui.waitUntil(10000) { vm.entries.value.isEmpty() }
+        ui.onNodeWithText("我的").performClick()
+        ui.onNodeWithText("回收站").performScrollTo().performClick()
+        ui.onNodeWithText("expense-test").assertExists()
+        ui.onNodeWithText("恢复账目").performScrollTo().performClick()
+        ui.waitUntil(10000) { vm.entries.value.any { it.note == "expense-test" && it.amountFen == 2000L } }
+        ui.onNodeWithText("回收站为空").assertExists()
     }
 
     @Test fun backdateIncomeWithCustomCategoryAndEmptyNote() {

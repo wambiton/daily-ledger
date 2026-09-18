@@ -90,7 +90,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(
-            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
+            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "trash" -> "回收站"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
             navigationIcon = { if(route != "home") TextButton(onClick = { leave() }, enabled = !busy) { Text("返回") } },
             actions = { if(route == "home" && tab == 0) Text("本地保存", modifier = Modifier.padding(end = 20.dp), style = MaterialTheme.typography.labelMedium) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -136,8 +136,10 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
                             Text("账目保存在这台手机。请勿卸载应用或清除应用数据。", style = MaterialTheme.typography.bodySmall)
                         }
                     }
+                    OutlinedButton(onClick = { route = "trash" }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("回收站") }
                     OutlinedButton(onClick = { type = "expense"; route = "manage" }, modifier = Modifier.fillMaxWidth()) { Text("分类管理") }
                 }
+                "trash" -> TrashScreen(vm, byId, busy)
                 "choose", "manage" -> {
                     TypeSelector(type, !busy) { type = it; categoryId = ""; if(categoryReturn) dirty = true }
                     Text(if(route == "choose") "先选择分类，再填写金额" else "收入与支出分类分别管理", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -189,7 +191,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
     if(discard) AlertDialog(onDismissRequest = { discard = false }, title = { Text("放弃本次编辑？") },
         text = { Text("尚未保存的内容将丢失。") }, confirmButton = { TextButton(onClick = { discard = false; dirty = false; route = if(entryId == null) "home" else "detail" }) { Text("放弃") } },
         dismissButton = { TextButton(onClick = { discard = false }) { Text("继续编辑") } })
-    if(deleteConfirm) AlertDialog(onDismissRequest = { if(!busy) deleteConfirm = false }, title = { Text("删除这笔账目？") },
+    if(deleteConfirm) AlertDialog(onDismissRequest = { if(!busy) deleteConfirm = false }, title = { Text("移入回收站？删除后保留30天") },
         text = { val e = entries.find { it.id == detailId }; Text("${e?.let { byId[it.categoryId]?.name }.orEmpty()} ¥${e?.let { Rules.money(it.amountFen) }.orEmpty()}") },
         confirmButton = { TextButton(enabled = !busy, onClick = { detailId?.let { vm.delete(it) { deleteConfirm = false; route = "home" } } }) { Text("删除") } },
         dismissButton = { TextButton(enabled = !busy, onClick = { deleteConfirm = false }) { Text("取消") } })

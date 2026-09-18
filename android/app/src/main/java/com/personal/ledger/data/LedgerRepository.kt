@@ -11,6 +11,23 @@ class LedgerRepository(private val db: LedgerDatabase, val owner: String) {
     val categories = dao.categories(owner)
     val entries = dao.entries(owner)
     val pendingCount = dao.pendingCount(owner)
+    val trash = dao.trash(owner)
+    companion object { const val RETENTION_MS = 30L * 24 * 60 * 60 * 1000 }
+
+    suspend fun purgeExpired(now: Long = System.currentTimeMillis()): Int = db.withTransaction {
+        // Keep deletion operations pending until a full snapshot is acknowledged.
+        dao.purgeTrash(owner, now - RETENTION_MS)
+    }
+
+    suspend fun restoreDeleted(id: String, now: Long = System.currentTimeMillis()) = db.withTransaction {
+        val entry = requireNotNull(dao.entry(id)) { "账目已过期或不存在" }
+        require(entry.owner == owner) { "无法访问此账目" }
+        val deleted = requireNotNull(entry.deletedAt) { "账目已恢复" }
+        require(deleted > now - RETENTION_MS) { "这笔账目已超过30天，无法恢复" }
+        val restored = entry.copy(deletedAt = null, updatedAt = now)
+        dao.upsertEntry(restored)
+        queueEntry(restored, "upsert")
+    }
 
     suspend fun seedDefaults() = db.withTransaction {
         val names = mapOf(

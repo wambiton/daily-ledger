@@ -17,6 +17,7 @@ class LedgerViewModel @JvmOverloads constructor(application: Application, privat
     val pending = repo.pendingCount.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val categories = repo.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val entries = repo.entries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val trash = repo.trash.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val ready = MutableStateFlow(false)
     val busy = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
@@ -25,6 +26,8 @@ class LedgerViewModel @JvmOverloads constructor(application: Application, privat
     override fun onCleared() { LedgerDatabases.release(databaseName) }
     fun initialize() = runAction {
         repo.seedDefaults()
+        repo.purgeExpired()
+        TrashCleanup.schedule(getApplication(), databaseName, owner)
         ready.value = true
     }
     fun addCategory(type: String, name: String, complete: (Category) -> Unit) = runAction {
@@ -38,6 +41,7 @@ class LedgerViewModel @JvmOverloads constructor(application: Application, privat
         repo.delete(id)
         complete()
     }
+    fun restoreDeleted(id: String) = runAction { repo.restoreDeleted(id) }
     private fun runAction(block: suspend () -> Unit) {
         if (busy.value) return
         busy.value = true

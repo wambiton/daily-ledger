@@ -11,8 +11,8 @@ android {
         applicationId = "com.personal.ledger"
         minSdk = 26
         targetSdk = 35
-        versionCode = 7
-        versionName = "0.5.1-ledger-recovery"
+        versionCode = 8
+        versionName = "0.5.2-mail-connection"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

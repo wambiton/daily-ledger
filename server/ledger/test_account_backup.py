@@ -17,6 +17,26 @@ from . import sessions
 class AccountBackupTests(TestCase):
     password = 'test-password-123'
 
+    def test_version_two_trash_round_trip_and_validation(self):
+        account = self.account()
+        payload = self.payload()
+        payload['format_version'] = 2
+        payload['entries'][0]['deleted_at'] = 2
+        data = {'operation_id': str(uuid.uuid4()), 'base_revision': 0, 'payload': payload}
+        result = self.post('backup/', data, account['access_token'])
+        self.assertEqual(result.status_code, 200)
+        restored = self.client.get('/api/v1/backup/download/', HTTP_AUTHORIZATION='Bearer ' + account['access_token'])
+        self.assertEqual(restored.json()['payload'], payload)
+        from .backup_api import validate, info
+        self.assertEqual(validate(payload), payload)
+        snapshot = BackupSnapshot(user_id=account['user']['id'], revision=1, payload=payload,
+                                  digest='test', created_at=timezone.now())
+        self.assertEqual(info(snapshot)['entry_count'], 0)
+        self.assertEqual(info(snapshot)['trash_count'], 1)
+        payload['entries'][0]['deleted_at'] = 3
+        with self.assertRaises(ValueError):
+            validate(payload)
+
     def test_eight_character_password_registration_login_and_reset(self):
         self.password = '12345678'
         self.account()

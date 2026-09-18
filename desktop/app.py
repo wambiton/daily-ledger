@@ -180,7 +180,7 @@ def main():
         try:
             rows=summaries(folder);table.delete(*table.get_children())
             for address,when,revision,payload in rows:
-                count=len(json.loads(payload)['entries']) if payload else 0
+                count=sum(e.get('deleted_at') is None for e in json.loads(payload)['entries']) if payload else 0
                 table.insert('', 'end', values=(address,when or '尚未备份',count,f'成功 · v{revision}' if revision else '尚未备份'))
         except Exception:pass
         root.after(4000,refresh)

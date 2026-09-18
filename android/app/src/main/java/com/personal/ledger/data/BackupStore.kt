@@ -15,41 +15,50 @@ class BackupStore(private val db: LedgerDatabase, private val owner: String) {
         dao.categorySnapshot(owner).forEach { c -> cats.put(JSONObject().put("id", c.id).put("type", c.type)
             .put("name", c.name).put("default_key", c.defaultKey ?: JSONObject.NULL)) }
         val entries = JSONArray()
-        dao.entrySnapshot(owner).forEach { e -> entries.put(JSONObject().put("id", e.id).put("type", e.type)
+        dao.allEntries(owner).filter { it.deletedAt == null || it.deletedAt > System.currentTimeMillis() - LedgerRepository.RETENTION_MS }.forEach { e -> entries.put(JSONObject().put("id", e.id).put("type", e.type)
             .put("category_id", e.categoryId).put("amount_fen", e.amountFen).put("date", e.date).put("note", e.note)
-            .put("created_at", e.createdAt).put("updated_at", e.updatedAt)) }
-        JSONObject().put("format_version", 1).put("categories", cats).put("entries", entries).put("import_sources", JSONArray(dao.importedSources(owner)))
+            .put("created_at", e.createdAt).put("updated_at", e.updatedAt).put("deleted_at", e.deletedAt ?: JSONObject.NULL)) }
+        JSONObject().put("format_version", 2).put("categories", cats).put("entries", entries).put("import_sources", JSONArray(dao.importedSources(owner)))
     }
     class DuplicateImport(val count: Int): IllegalArgumentException("已有${count}笔本机账目重复导入")
 
-    /** One transaction: append all rows, or change nothing until duplicates are confirmed. */
-    suspend fun importLocal(payload: JSONObject, allowDuplicates: Boolean = false): Int = db.withTransaction {
-        val items = payload.getJSONArray("entries")
-        val sources = dao.importedSources(owner).toSet()
-        val duplicates = (0 until items.length()).count {
-            val id = items.getJSONObject(it).getString("id")
-            id in sources || dao.entry(id)?.owner == owner
-        }
-        if(duplicates > 0 && !allowDuplicates) throw DuplicateImport(duplicates)
+    data class Preview(val normal: Int, val trash: Int, val duplicates: Int, val expired: Int)
+    suspend fun preview(payload: JSONObject): Preview = db.withTransaction {
+        val parsed = PortableSnapshot.parse(payload, owner)
+        val retained = parsed.retained(System.currentTimeMillis())
+        val known = dao.importedSources(owner).toSet() + dao.allEntries(owner).map { it.id }
+        Preview(retained.count { it.deletedAt == null }, retained.count { it.deletedAt != null },
+            retained.count { it.id in known }, parsed.entries.size - retained.size)
+    }
+    suspend fun importLocal(payload: JSONObject, allowDuplicates: Boolean = false): Int =
+        append(payload, if(allowDuplicates) "include" else "confirm")
+
+    /** Append only, including trash. Preview and writes are rechecked in one transaction. */
+    suspend fun append(payload: JSONObject, duplicates: String): Int = db.withTransaction {
+        require(duplicates in listOf("include", "skip", "confirm"))
+        val parsed = PortableSnapshot.parse(payload, owner)
+        val known = dao.importedSources(owner).toSet() + dao.allEntries(owner).map { it.id }
+        val retained = parsed.retained(System.currentTimeMillis())
+        val duplicateCount = retained.count { it.id in known }
+        if(duplicateCount > 0 && duplicates == "confirm") throw DuplicateImport(duplicateCount)
+        val items = retained.filter { duplicates != "skip" || it.id !in known }
         val categories = dao.categorySnapshot(owner).toMutableList()
         val mapping = mutableMapOf<String, Category>()
-        val cats = payload.getJSONArray("categories")
         val repo = LedgerRepository(db, owner)
-        for(i in 0 until cats.length()) {
-            val c = cats.getJSONObject(i)
-            val category = categories.firstOrNull { it.type == c.getString("type") && it.name == c.getString("name") }
-                ?: repo.addCategory(c.getString("type"), c.getString("name")).also { categories.add(it) }
-            mapping[c.getString("id")] = category
+        val needed = items.map { it.categoryId }.toSet()
+        parsed.categories.filter { it.id in needed }.forEach { c ->
+            val category = categories.firstOrNull { it.type == c.type && it.name == c.name }
+                ?: repo.addCategory(c.type,c.name).also { categories.add(it) }
+            mapping[c.id] = category
         }
-        for(i in 0 until items.length()) {
-            val e = items.getJSONObject(i)
-            val category = requireNotNull(mapping[e.getString("category_id")])
-            require(category.type == e.getString("type"))
-            val amount = java.math.BigDecimal.valueOf(e.getLong("amount_fen"), 2).toPlainString()
-            repo.save(null, category.type, category.id, amount, LocalDate.parse(e.getString("date")), e.getString("note"))
-            dao.markImported(ImportedSource(owner, e.getString("id")))
+        items.forEach { source ->
+            val entry = source.copy(id = UUID.randomUUID().toString(),categoryId = mapping.getValue(source.categoryId).id)
+            dao.upsertEntry(entry)
+            dao.enqueue(PendingOperation(UUID.randomUUID().toString(),owner,entry.id,"entry",
+                if(entry.deletedAt == null) "upsert" else "delete",0,"{}",System.currentTimeMillis()))
+            dao.markImported(ImportedSource(owner,source.id))
         }
-        items.length()
+        items.size
     }
 
     suspend fun prepare(): JSONObject = db.withTransaction {
@@ -62,34 +71,12 @@ class BackupStore(private val db: LedgerDatabase, private val owner: String) {
         ids.chunked(500).forEach { dao.acknowledge(owner, it) }
     }
     suspend fun restore(payload: JSONObject, revision: Long, requireEmpty: Boolean = false) = db.withTransaction {
-        require(payload.getInt("format_version") == 1 && revision >= 0) { "备份版本不支持" }
-        if(requireEmpty) require(dao.entrySnapshot(owner).isEmpty()) { "当前账号已有账目，不能导入本机账本" }
-        val cats = payload.getJSONArray("categories")
-        val items = payload.getJSONArray("entries")
-        require(cats.length() <= 2000 && items.length() <= 50000) { "备份记录过多" }
-        val categories = (0 until cats.length()).map { i ->
-            val c = cats.getJSONObject(i)
-            val id = c.getString("id"); require(UUID.fromString(id).toString() == id)
-            val type = c.getString("type"); require(type in listOf("expense", "income"))
-            Category(id, owner, type, Rules.category(c.getString("name")), if(c.isNull("default_key")) null else c.getString("default_key"))
-        }
-        require(categories.map { it.id }.distinct().size == categories.size)
-        val byId = categories.associateBy { it.id }
-        val entries = (0 until items.length()).map { i ->
-            val e = items.getJSONObject(i)
-            val id = e.getString("id"); require(UUID.fromString(id).toString() == id)
-            val category = requireNotNull(byId[e.getString("category_id")]) { "备份缺少分类" }
-            require(e.getString("type") == category.type)
-            val amount = e.getLong("amount_fen"); require(amount in 1..99999999999L)
-            val day = LocalDate.parse(e.getString("date")); Rules.date(day)
-            val note = e.getString("note"); Rules.note(note)
-            val created = e.getLong("created_at"); val updated = e.getLong("updated_at")
-            require(created >= 0 && updated >= created)
-            Entry(id, owner, category.type, category.id, amount, day.toString(), note, created, updated)
-        }
-        require(entries.map { it.id }.distinct().size == entries.size)
-        val sources = payload.optJSONArray("import_sources") ?: JSONArray()
-        val sourceIds = (0 until sources.length()).map { sources.getString(it).also { id -> require(UUID.fromString(id).toString() == id) } }
+        require(revision >= 0)
+        val parsed = PortableSnapshot.parse(payload, owner)
+        if(requireEmpty) require(dao.allEntries(owner).isEmpty()) { "当前账号已有账目，不能替换账本" }
+        val categories = parsed.categories
+        val entries = parsed.retained(System.currentTimeMillis())
+        val sourceIds = parsed.sources
         dao.clearImported(owner)
         sourceIds.forEach { dao.markImported(ImportedSource(owner, it)) }
         dao.clearEntries(owner); dao.clearOutbox(owner); dao.clearCategories(owner)

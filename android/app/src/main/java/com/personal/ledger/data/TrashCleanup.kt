@@ -13,7 +13,8 @@ class TrashCleanup(context: Context, params: WorkerParameters) : CoroutineWorker
         return try {
             LedgerRepository(db, owner).purgeExpired()
             Result.success()
-        } catch (_: Exception) { Result.retry() }
+        } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+        catch (_: Exception) { Result.retry() }
         finally { LedgerDatabases.release(name) }
     }
     companion object {

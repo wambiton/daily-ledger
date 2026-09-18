@@ -24,7 +24,7 @@ def identifier(value):
 
 
 def validate(payload):
-    if not isinstance(payload, dict) or payload.get('format_version') != 1 or set(payload) not in ({'format_version', 'categories', 'entries'}, {'format_version', 'categories', 'entries', 'import_sources'}):
+    if not isinstance(payload, dict) or type(payload.get('format_version')) is not int or payload.get('format_version') not in (1, 2) or set(payload) not in ({'format_version', 'categories', 'entries'}, {'format_version', 'categories', 'entries', 'import_sources'}):
         raise ValueError('invalid snapshot')
     sources = payload.get('import_sources', [])
     if not isinstance(sources, list) or len(sources) > 50000:
@@ -50,7 +50,10 @@ def validate(payload):
         by_id[cid], _ = item, names.add(key)
     today = timezone.now().astimezone(ZoneInfo('Asia/Shanghai')).date()
     for item in entries:
-        if not isinstance(item, dict) or set(item) != {'id', 'type', 'category_id', 'amount_fen', 'date', 'note', 'created_at', 'updated_at'}:
+        fields = {'id', 'type', 'category_id', 'amount_fen', 'date', 'note', 'created_at', 'updated_at'}
+        if payload['format_version'] == 2:
+            fields.add('deleted_at')
+        if not isinstance(item, dict) or set(item) != fields:
             raise ValueError('invalid entry')
         eid = identifier(item['id'])
         category = by_id.get(item['category_id'])
@@ -65,6 +68,8 @@ def validate(payload):
             raise ValueError('invalid note')
         integer(item['created_at'])
         integer(item['updated_at'], item['created_at'])
+        if item.get('deleted_at') is not None:
+            integer(item['deleted_at'], item['created_at'], item['updated_at'])
     return payload
 
 
@@ -72,7 +77,8 @@ def info(snapshot):
     if snapshot is None:
         return {'revision': 0, 'created_at': None, 'entry_count': 0}
     return {'revision': snapshot.revision, 'created_at': snapshot.created_at.isoformat(),
-            'entry_count': len(snapshot.payload['entries']), 'sha256': snapshot.digest}
+            'entry_count': sum(e.get('deleted_at') is None for e in snapshot.payload['entries']),
+            'trash_count': sum(e.get('deleted_at') is not None for e in snapshot.payload['entries']), 'sha256': snapshot.digest}
 
 
 @endpoint('POST', authenticated=True)

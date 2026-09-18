@@ -76,6 +76,38 @@ class LedgerFlowTest {
         Assert.assertEquals("", entry.note)
     }
 
+    @Test fun fileRangeExportAndDuplicateImportPreview() {
+        val day = Rules.today().toString()
+        val previous = Rules.today().minusDays(1).toString()
+        val c = vm.categories.value.first()
+        ui.runOnIdle { vm.save(null,c.type,c.id,"12.34",day,"file-today") {} }
+        ui.waitUntil(10000) { !vm.busy.value && vm.entries.value.size == 1 }
+        ui.runOnIdle { vm.save(null,c.type,c.id,"2",previous,"file-previous") {} }
+        ui.waitUntil(10000) { !vm.busy.value && vm.entries.value.size == 2 }
+        val output = java.io.File(app.cacheDir,"export-${UUID.randomUUID()}.json")
+        try {
+            var prepared = false
+            ui.runOnIdle { vm.prepareExport(false,day,day) { prepared = true } }
+            ui.waitUntil(10000) { prepared && !vm.busy.value }
+            ui.runOnIdle { vm.writeExport(android.net.Uri.fromFile(output)) }
+            ui.waitUntil(10000) { !vm.busy.value && vm.fileMessage.value != null }
+            val payload = org.json.JSONObject(output.readText())
+            Assert.assertEquals(1,payload.getJSONArray("entries").length())
+            ui.onNodeWithText("我的").performClick()
+            ui.onNodeWithText("文件导入导出").performScrollTo().performClick()
+            ui.runOnIdle { vm.readImport(android.net.Uri.fromFile(output)) }
+            ui.waitUntil(10000) { vm.importPreview.value != null }
+            ui.onNodeWithText("跳过重复并导入").performClick()
+            ui.waitUntil(10000) { !vm.busy.value && vm.importPreview.value == null }
+            Assert.assertEquals(2,vm.entries.value.size)
+            ui.runOnIdle { vm.readImport(android.net.Uri.fromFile(output)) }
+            ui.waitUntil(10000) { vm.importPreview.value != null }
+            ui.onNodeWithText("仍然导入重复项").performClick()
+            ui.waitUntil(10000) { !vm.busy.value && vm.entries.value.size == 3 }
+            Assert.assertEquals(2668L,vm.entries.value.sumOf {it.amountFen})
+        } finally { output.delete() }
+    }
+
     @Test fun duplicateCategoryErrorRemainsVisibleInDialog() {
         ui.onNodeWithTag("new-entry").performClick()
         ui.onNodeWithText("＋ 新建分类").performClick()

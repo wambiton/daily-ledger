@@ -90,7 +90,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(
-            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "trash" -> "回收站"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
+            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "trash" -> "回收站"; "files" -> "文件导入导出"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
             navigationIcon = { if(route != "home") TextButton(onClick = { leave() }, enabled = !busy) { Text("返回") } },
             actions = { if(route == "home" && tab == 0) Text("本地保存", modifier = Modifier.padding(end = 20.dp), style = MaterialTheme.typography.labelMedium) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -136,10 +136,12 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
                             Text("账目保存在这台手机。请勿卸载应用或清除应用数据。", style = MaterialTheme.typography.bodySmall)
                         }
                     }
+                    OutlinedButton(onClick = { route = "files" }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("文件导入导出") }
                     OutlinedButton(onClick = { route = "trash" }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("回收站") }
                     OutlinedButton(onClick = { type = "expense"; route = "manage" }, modifier = Modifier.fillMaxWidth()) { Text("分类管理") }
                 }
                 "trash" -> TrashScreen(vm, byId, busy)
+                "files" -> FileToolsScreen(vm,busy)
                 "choose", "manage" -> {
                     TypeSelector(type, !busy) { type = it; categoryId = ""; if(categoryReturn) dirty = true }
                     Text(if(route == "choose") "先选择分类，再填写金额" else "收入与支出分类分别管理", color = MaterialTheme.colorScheme.onSurfaceVariant)

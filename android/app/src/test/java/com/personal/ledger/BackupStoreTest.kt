@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.personal.ledger.data.*
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.json.JSONObject
 import org.junit.*
 import org.junit.Assert.*
@@ -41,6 +42,7 @@ class BackupStoreTest {
         val store = BackupStore(db,"first")
         val prepared = store.prepare()
         repo.save(e.id,"expense",category.id,"2",LocalDate.of(2025,1,2),"")
+        assertEquals(1,db.ledger().pendingEntries("first").first())
         val ids = prepared.getJSONArray("pending_ids")
         store.acknowledge(1,(0 until ids.length()).map { ids.getString(it) })
         assertEquals(1,db.ledger().pending("first").size)

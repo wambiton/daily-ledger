@@ -20,6 +20,8 @@ class LedgerViewModel @JvmOverloads constructor(application: Application, privat
     private val db = LedgerDatabases.acquire(application, databaseName)
     private val repo = LedgerRepository(db, owner)
     val pending = repo.pendingCount.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    val pendingEntries = db.ledger().pendingEntries(owner).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    val backupState = db.ledger().observeBackupState(owner).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val categories = repo.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val entries = repo.entries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val trash = repo.trash.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

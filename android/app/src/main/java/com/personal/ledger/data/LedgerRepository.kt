@@ -15,7 +15,9 @@ class LedgerRepository(private val db: LedgerDatabase, val owner: String) {
     companion object { const val RETENTION_MS = 30L * 24 * 60 * 60 * 1000 }
 
     suspend fun purgeExpired(now: Long = System.currentTimeMillis()): Int = db.withTransaction {
-        // Keep deletion operations pending until a full snapshot is acknowledged.
+        // Expiry changes the next full snapshot, including previously backed-up trash.
+        dao.allEntries(owner).filter { it.deletedAt != null && it.deletedAt <= now - RETENTION_MS }
+            .forEach { queueEntry(it, "delete") }
         dao.purgeTrash(owner, now - RETENTION_MS)
     }
 

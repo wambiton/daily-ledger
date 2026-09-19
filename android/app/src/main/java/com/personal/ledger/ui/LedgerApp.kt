@@ -127,6 +127,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
                         ComparisonScreen(entries, categories) { detailId = it.id; route = "detail" }
                     }
                 } else {
+                    BackupStatusCard(vm)
                     if(accountContent != null) {
                         accountContent()
                     } else {

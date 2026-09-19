@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.personal.ledger.data.*
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
@@ -41,8 +42,12 @@ class TrashTest {
         assertEquals(0,repo.purgeExpired(deadline-1))
         assertEquals(0,other.purgeExpired(deadline))
         assertTrue(runCatching { repo.restoreDeleted(e.id,deadline) }.isFailure)
+        val oldIds = db.ledger().pending("a").map {it.id}
+        BackupStore(db,"a").acknowledge(1,oldIds)
+        assertEquals(0,db.ledger().pendingEntries("a").first())
         assertEquals(1,repo.purgeExpired(deadline))
         assertNull(db.ledger().entry(e.id))
+        assertEquals(1,db.ledger().pendingEntries("a").first())
         assertTrue(db.ledger().pending("a").any { it.entityId == e.id && it.action == "delete" })
     }
 }

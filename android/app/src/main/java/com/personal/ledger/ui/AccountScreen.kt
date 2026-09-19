@@ -75,6 +75,8 @@ fun AccountScreen(vm: BackupViewModel) {
     var showBooks by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("账号与电脑备份", style = MaterialTheme.typography.titleLarge)
+        if(uploading) Text("备份任务进行中：电脑未连接时继续在后台等候。以成功提示为准。")
+        if(waiting) Text("等待电脑连接，手机账目仍然保留。")
         Text("当前账本：${selected?.optString("label") ?: account?.getJSONObject("user")?.getString("email") ?: "原本机账本"}",modifier=Modifier.testTag("current-phone-book"))
         OutlinedButton(onClick={ showBooks=true },enabled=!busy && !uploading,modifier=Modifier.fillMaxWidth().testTag("choose-phone-book")) { Text("查看 / 切换手机账本") }
         Text("手动备份到电脑；换机登录自动加载已备份账目。日常记账无需电脑在线。", style = MaterialTheme.typography.bodySmall)

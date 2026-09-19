@@ -20,7 +20,9 @@ def main():
     required = [bundle/'LedgerBackup.exe', ROOT/'android/app/build/outputs/apk/debug/app-debug.apk',
                 ROOT/'.tools/distribution-sources/cloudflared-LICENSE',
                 ROOT/'.tools/distribution-sources/pystray-0.19.5-source.zip']
-    for path in required:
+    gui_required = [bundle/'_internal/_tcl_data/init.tcl', bundle/'_internal/_tk_data/tk.tcl',
+                    bundle/'_internal/tcl86t.dll', bundle/'_internal/tk86t.dll']
+    for path in required + gui_required:
         if not path.is_file():
             raise RuntimeError('Missing distribution input: '+str(path.relative_to(ROOT)))
     with tempfile.TemporaryDirectory(dir=output, prefix='staging-') as temp:
@@ -77,7 +79,9 @@ def main():
     shutil.copy2(required[1],apk)
     shutil.copy2(ROOT/'docs/电脑端外网备份使用说明.md',output/'使用说明.md')
     (output/'验收状态.txt').write_text(
-        '2026-09-17：20项JVM、19项真机回归、33项服务端（此前通过）、6项电脑界面及配置测试通过。\n'
+        '0.6功能验证：26项JVM、20项真机回归、34项服务端、6项电脑界面及配置测试通过（2026-09-18）。\n'
+        '新增30天回收站、Excel和JSON文件导出、追加导入重复选择、按账本显示备份状态。\n'
+        'JSON及电脑备份包含回收站，保留原删除时间；Excel只含正常账目。手机和电脑端应一起升级。\n'
         '保存授权码后自动启动连接，显示保存/认证状态；实际保存配置的QQ邮箱认证通过，未代发真实验证码。\n'
         '修复账号目录误连、密码重置虚假成功、扫码后手机账本不可见；现有手机账本逐行核对保留。\n'
         '流量配对、登录、后台重试上传已实际成功；完整外网换手机/换电脑专项尚未通过，免费通道连接不稳定。\n'

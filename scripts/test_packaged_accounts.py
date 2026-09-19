@@ -53,8 +53,9 @@ def main():
         try:
             status,account=call('auth/login/',{'email':email,'password':'12345678'});assert status==200
             category=str(uuid.uuid4());entry=str(uuid.uuid4())
-            payload={'format_version':1,'categories':[{'id':category,'type':'expense','name':'餐饮','default_key':None}],
-                'entries':[{'id':entry,'type':'expense','category_id':category,'amount_fen':1234,'date':'2026-09-15','note':'synthetic','created_at':1,'updated_at':2}]}
+            payload={'format_version':2,'categories':[{'id':category,'type':'expense','name':'餐饮','default_key':None}],
+                'entries':[{'id':entry,'type':'expense','category_id':category,'amount_fen':1234,'date':'2026-09-15','note':'synthetic','created_at':1,'updated_at':2,'deleted_at':None}]}
+            payload['entries'].append({**payload['entries'][0], 'id':str(uuid.uuid4()), 'note':'synthetic trash', 'deleted_at':2})
             assert call('backup/',{'operation_id':str(uuid.uuid4()),'base_revision':0,'payload':payload},account['access_token'])[0]==200
             status,result=call('auth/reset/',{'email':email,'password':'abcdefgh','code':'654321'})
             assert status==200 and result['status']=='password_reset'
@@ -66,6 +67,7 @@ def main():
             assert reopened['user']['id']==account['user']['id']
             status,snapshot=call('backup/download/',token=reopened['access_token'])
             assert status==200 and snapshot['payload']==payload
+            assert snapshot['entry_count']==1 and snapshot['trash_count']==1
         finally:process.terminate();process.wait(timeout=10)
         subprocess.run([str(executable),'--data-dir',str(folder),'--smoke-test'],check=True,timeout=20,creationflags=subprocess.CREATE_NO_WINDOW)
     print('PACKAGED_RESET_RESTART_LOGIN_AND_UNCHANGED_BACKUP_OK; GUI_SMOKE_OK')

@@ -88,7 +88,7 @@ def main():
     body = ttk.Frame(panel); body.pack(fill='x',pady=10)
     qr_label = ttk.Label(body,text='启动成功后在这里显示配对二维码',width=40,anchor='center'); qr_label.pack(side='left')
     tips = ttk.Frame(body,padding=12);tips.pack(side='left',fill='both',expand=True)
-    ttk.Label(tips,text='手机 → 我的 → 扫码连接电脑\n\n首次注册自动带入本机账目。\n换手机扫码并登录即可找回已备份账目。\n\n免费临时地址可能变化，请重新扫码。\n免费连接不保证持续可用。\n二维码仅提供给信任的使用者。',wraplength=380).pack(anchor='w')
+    ttk.Label(tips,text='手机 → 我的 → 扫码连接电脑\n\n新注册账号为空，旧账目需手动选择导入。\n换手机扫码并登录即可找回已备份账目。\n\n免费临时地址可能变化，请重新扫码。\n免费连接不保证持续可用。\n二维码仅提供给信任的使用者。',wraplength=380).pack(anchor='w')
     def stop():
         nonlocal started
         stopped.set()

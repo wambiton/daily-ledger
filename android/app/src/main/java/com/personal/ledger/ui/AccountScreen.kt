@@ -55,7 +55,6 @@ fun AccountScreen(vm: BackupViewModel) {
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.upload() }
     val message by vm.message.collectAsStateWithLifecycle()
     val waiting by vm.waiting.collectAsStateWithLifecycle()
-    val duplicates by vm.duplicateCount.collectAsStateWithLifecycle()
     val status by vm.lastBackup.collectAsStateWithLifecycle()
     val savedServer by vm.server.collectAsStateWithLifecycle()
     var address by rememberSaveable { mutableStateOf(savedServer) }
@@ -71,7 +70,7 @@ fun AccountScreen(vm: BackupViewModel) {
     var showPasswordAgain by remember { mutableStateOf(false) }
     var code by remember { mutableStateOf("") }
     var mode by rememberSaveable { mutableStateOf("login") }
-    var confirmation by rememberSaveable { mutableStateOf<String?>(null) }
+    var chooseImport by remember { mutableStateOf(false) }
     var showBooks by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("账号与电脑备份", style = MaterialTheme.typography.titleLarge)
@@ -108,7 +107,7 @@ fun AccountScreen(vm: BackupViewModel) {
             }
             Button(onClick = { vm.signIn(address, email, password, code, mode, passwordAgain) { password = ""; passwordAgain = ""; showPassword = false; showPasswordAgain = false; code = "" } }, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().testTag("account-submit")) { Text(when(mode) { "register" -> "注册并登录"; "reset" -> "重置密码"; else -> "登录账号" }) }
-            Text("首次注册自动带入原本机账目；已有账号登录后可追加导入。原本机账本始终保留。", style = MaterialTheme.typography.bodySmall)
+            Text("新注册账号为空账本。登录后可从手机账本预览、勾选并追加导入，源账本始终保留。", style = MaterialTheme.typography.bodySmall)
         } else {
             Text(account!!.getJSONObject("user").getString("email"), modifier = Modifier.testTag("signed-in-email"))
             Text(account!!.getString("server"), style = MaterialTheme.typography.bodySmall)
@@ -119,10 +118,10 @@ fun AccountScreen(vm: BackupViewModel) {
             }, enabled = !busy && !uploading && vm.viewingAccount(), modifier = Modifier.fillMaxWidth().testTag("upload-backup")) { Text("备份到电脑") }
             if(!vm.viewingAccount()) {
                 Text("当前查看的是另一份手机账本。追加导入当前账号后，再切回账号账本备份。")
-                OutlinedButton(onClick={ confirmation="selected" },enabled=!busy && !uploading,modifier=Modifier.fillMaxWidth().testTag("import-selected-book")) { Text("将这份手机账本追加导入当前账号") }
+                OutlinedButton(onClick={ vm.selectedBook.value?.let { vm.previewBookImport(it) } },enabled=!busy && !uploading,modifier=Modifier.fillMaxWidth().testTag("import-selected-book")) { Text("将这份手机账本追加导入当前账号") }
                 TextButton(onClick={ vm.selectAccountBook() },modifier=Modifier.testTag("return-account-book")) { Text("返回当前账号账本") }
             }
-            OutlinedButton(onClick = { confirmation = "import" }, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("import-local")) { Text("导入原本机账目") }
+            OutlinedButton(onClick = { chooseImport = true }, enabled = !busy && !uploading, modifier = Modifier.fillMaxWidth().testTag("import-local")) { Text("从手机账本导入") }
             if(uploading) OutlinedButton(onClick = { vm.cancelUpload() },modifier = Modifier.testTag("cancel-upload")) { Text("取消后台备份") }
             TextButton(onClick = { vm.logout() }, enabled = !busy) { Text("退出账号，查看原本机账本") }
         }
@@ -143,14 +142,5 @@ fun AccountScreen(vm: BackupViewModel) {
         text={ Text("手机当前账目会保留，并继续显示在原账本中。连接后需要登录该电脑的账号；扫码本身不会备份。可随时从“查看 / 切换手机账本”找回原账本。") },
         confirmButton={ TextButton(onClick={ vm.confirmPair() },enabled=!busy,modifier=Modifier.testTag("confirm-pair")) { Text("保留账本并连接") } },
         dismissButton={ TextButton(onClick={ vm.dismissPair() }) { Text("取消") } })
-    if(confirmation != null) AlertDialog(onDismissRequest = { confirmation = null },
-        title = { Text("追加导入手机账目？") },
-        text = { Text("将${if(confirmation=="selected") "当前查看的手机账本" else "原未登录账本"}追加到当前账号，保留双方原有账目。") },
-        confirmButton = { TextButton(onClick = { val selectedSource=confirmation=="selected";confirmation = null; vm.importLocal(fromSelected=selectedSource) }, modifier = Modifier.testTag("confirm-backup-action")) { Text("导入") } },
-        dismissButton = { TextButton(onClick = { confirmation = null }) { Text("取消") } })
-    if(duplicates > 0) AlertDialog(onDismissRequest = { vm.dismissImport() },
-        title = { Text("账目已重复导入") },
-        text = { Text("其中${duplicates}笔本机账目已导入过。继续将再次新增相同账目，原有账目保留，两笔都计入统计。是否继续？") },
-        confirmButton = { TextButton(onClick = { vm.importLocal(true) }, enabled = !busy, modifier = Modifier.testTag("confirm-duplicate-import")) { Text("继续导入") } },
-        dismissButton = { TextButton(onClick = { vm.dismissImport() }, enabled = !busy) { Text("取消") } })
+    BookImportDialogs(vm,chooseImport) { chooseImport = false }
 }

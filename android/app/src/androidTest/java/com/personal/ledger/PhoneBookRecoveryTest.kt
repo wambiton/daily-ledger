@@ -62,11 +62,14 @@ class PhoneBookRecoveryTest {
             ui.runOnIdle { vm.selectBook(JSONObject().put("database",sourceName).put("owner","local-preview").put("label","测试手机账本")) }
             ui.onNodeWithTag("upload-backup").assertIsNotEnabled()
             ui.onNodeWithTag("import-selected-book").performScrollTo().performClick()
+            ui.waitUntil(10000) { vm.bookImport.value != null && !vm.busy.value }
+            ui.onNodeWithTag("import-select-all").performClick()
             ui.onNodeWithTag("confirm-backup-action").performClick()
             ui.waitUntil(10000) { !vm.busy.value }
             assertEquals(2,runBlocking { db.ledger().entrySnapshot(owner).size })
-            ui.runOnIdle { vm.importLocal(fromSelected=true) };ui.waitUntil(10000) { !vm.busy.value }
-            assertEquals(1,vm.duplicateCount.value)
+            ui.runOnIdle { vm.previewBookImport(vm.selectedBook.value!!) };ui.waitUntil(10000) { !vm.busy.value }
+            assertEquals(1,vm.bookImport.value!!.duplicateIds.size)
+            ui.onNodeWithTag("import-select-all").performClick()
             assertEquals(2,runBlocking { db.ledger().entrySnapshot(owner).size })
             ui.onNodeWithTag("confirm-duplicate-import").performClick();ui.waitUntil(10000) { !vm.busy.value }
             assertEquals(3,runBlocking { db.ledger().entrySnapshot(owner).size })

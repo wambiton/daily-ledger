@@ -23,6 +23,10 @@ class BackupStore(private val db: LedgerDatabase, private val owner: String) {
     class DuplicateImport(val count: Int): IllegalArgumentException("已有${count}笔本机账目重复导入")
 
     data class Preview(val normal: Int, val trash: Int, val duplicates: Int, val expired: Int)
+    suspend fun duplicateIds(payload: JSONObject): Set<String> = db.withTransaction {
+        val known = dao.importedSources(owner).toSet() + dao.allEntries(owner).map { it.id }
+        PortableSnapshot.parse(payload,owner).entries.filter { it.id in known }.map { it.id }.toSet()
+    }
     suspend fun preview(payload: JSONObject): Preview = db.withTransaction {
         val parsed = PortableSnapshot.parse(payload, owner)
         val retained = parsed.retained(System.currentTimeMillis())

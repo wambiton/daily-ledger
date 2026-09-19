@@ -110,20 +110,25 @@ class AccountBackupFlowTest {
             ui.onNodeWithTag("upload-backup").performScrollTo().performClick()
             ui.waitUntil(60000) { vm.message.value.startsWith("备份成功") }
             assertTrue(vm.message.value,vm.message.value.startsWith("备份成功"))
-            // A fresh fixture database simulates another phone; real ledgers are never opened.
-            ui.runOnIdle { vm.logout() }
-            ui.waitUntil(30000) { !vm.busy.value && !vm.uploading.value }
-            db.close()
-            app.deleteDatabase(name)
-            ui.runOnIdle { vm.signIn("http://127.0.0.1:8767",args.getString("backup_email")!!,"12345678","","login") }
-            ui.waitUntil(30000) { !vm.busy.value && !vm.uploading.value }
-            assertNotNull(vm.message.value, vm.account.value)
-            db = Room.databaseBuilder(app,LedgerDatabase::class.java,name).build()
-            runBlocking {
-                assertEquals(4567L,db.ledger().entrySnapshot(owner).single().amountFen)
-                assertTrue(db.ledger().entrySnapshot("unrelated-account").isEmpty())
-                assertEquals(1L,db.ledger().backupState(owner)!!.cursor)
-            }
+            // Two independent phone contexts; never delete phone A's database to simulate phone B.
+            val secondNamespace = "phone-b-${UUID.randomUUID()}"
+            val secondName = "account-${AccountVault.databaseKey(secondNamespace,owner)}.db"
+            val secondDb = LedgerDatabases.acquire(app,secondName)
+            try {
+                runBlocking { assertTrue(secondDb.ledger().allEntries(owner).isEmpty()) }
+                PhoneLedgers(app,secondNamespace).remember(org.json.JSONObject().put("database",secondName).put("owner",owner).put("label","phone B"))
+                val secondVm = BackupViewModel(app,secondNamespace)
+                holder.put("phone-b",secondVm)
+                ui.runOnIdle { secondVm.signIn("http://127.0.0.1:8767",args.getString("backup_email")!!,"12345678","","login") }
+                ui.waitUntil(30000) { !secondVm.busy.value }
+                assertNotNull(secondVm.message.value,secondVm.account.value)
+                runBlocking {
+                    assertEquals(db.ledger().entrySnapshot(owner),secondDb.ledger().entrySnapshot(owner))
+                    assertEquals(4567L,secondDb.ledger().entrySnapshot(owner).single().amountFen)
+                    assertTrue(secondDb.ledger().entrySnapshot("unrelated-account").isEmpty())
+                    assertEquals(1L,secondDb.ledger().backupState(owner)!!.cursor)
+                }
+            } finally { LedgerDatabases.release(secondName) }
             // Encrypted session survives recreating the account controller.
             val reopened = BackupViewModel(app,namespace)
             holder.put("reopened",reopened)
@@ -138,7 +143,7 @@ class AccountBackupFlowTest {
             AccountVault(app,namespace).clear()
         }
     }
-    @Test fun registrationImportsAndDuplicateConfirmationAppends() {
+    @Test fun registrationStaysEmptyUntilPreviewSelectionAndDuplicateChoice() {
         val args = InstrumentationRegistry.getArguments()
         Assume.assumeTrue(args.containsKey("register_email"))
         val app = ApplicationProvider.getApplicationContext<Application>()
@@ -152,7 +157,11 @@ class AccountBackupFlowTest {
             runBlocking {
                 val repo = LedgerRepository(source,"local-preview"); repo.seedDefaults()
                 val cat = source.ledger().categorySnapshot("local-preview").first()
-                repo.save(null,cat.type,cat.id,"10.00",LocalDate.of(2025,1,2),"synthetic-import")
+                val normal = repo.save(null,cat.type,cat.id,"9.00",LocalDate.of(2025,1,2),"synthetic-import")
+                repo.save(normal.id,cat.type,cat.id,"10.00",LocalDate.of(2025,1,2),"synthetic-import-edited")
+                repo.save(null,cat.type,cat.id,"99.00",LocalDate.of(2025,1,2),"leave-unselected")
+                val trash = repo.save(null,cat.type,cat.id,"3.00",LocalDate.of(2025,1,2),"synthetic-trash")
+                repo.delete(trash.id)
             }
             ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AccountScreen(vm) } } }
             ui.runOnIdle { vm.signIn("http://127.0.0.1:8767", args.getString("register_email")!!,"12345678",args.getString("register_code")!!,"register") }
@@ -163,21 +172,38 @@ class AccountBackupFlowTest {
             val target = LedgerDatabases.acquire(app, accountName)
             try {
                 val owner = account.getJSONObject("user").getString("id")
+                runBlocking { assertTrue(target.ledger().allEntries(owner).isEmpty()) }
+                fun preview() {
+                    ui.onNodeWithTag("import-local").performScrollTo().performClick()
+                    ui.onNodeWithTag("import-source-$local").performClick()
+                    ui.waitUntil(10000) { vm.bookImport.value != null && !vm.busy.value }
+                    ui.onNodeWithTag("confirm-backup-action").assertIsNotEnabled()
+                    ui.onNodeWithTag("import-select-all").performClick()
+                    val excluded = runBlocking { source.ledger().entrySnapshot("local-preview").single {it.note=="leave-unselected"}.id }
+                    ui.onNodeWithTag("import-entry-$excluded").performScrollTo().performClick()
+                }
+                preview()
+                ui.onNodeWithTag("confirm-backup-action").performClick()
+                ui.waitUntil(10000) { !vm.busy.value && vm.bookImport.value == null }
                 runBlocking { assertEquals(1,target.ledger().entrySnapshot(owner).size) }
                 ui.onNodeWithTag("upload-backup").performScrollTo().performClick()
                 ui.waitUntil(60000) { vm.message.value.startsWith("备份成功") }
-                assertTrue(vm.message.value,vm.message.value.startsWith("备份成功"))
-                ui.onNodeWithTag("import-local").performScrollTo().performClick()
+                preview()
                 ui.onNodeWithTag("confirm-backup-action").performClick()
-                ui.waitUntil(10000) { vm.duplicateCount.value == 1 }
+                ui.waitUntil(10000) { !vm.busy.value && vm.bookImport.value == null }
                 runBlocking { assertEquals(1,target.ledger().entrySnapshot(owner).size) }
+                preview()
                 ui.onNodeWithTag("confirm-duplicate-import").performClick()
-                ui.waitUntil(10000) { !vm.busy.value && vm.duplicateCount.value == 0 }
+                ui.waitUntil(10000) { !vm.busy.value && vm.bookImport.value == null }
                 runBlocking {
                     val entries = target.ledger().entrySnapshot(owner)
                     assertEquals(2,entries.map { it.id }.distinct().size)
                     assertEquals(2000L,entries.sumOf { it.amountFen })
-                    assertEquals(1,source.ledger().entrySnapshot("local-preview").size)
+                    assertEquals(2,source.ledger().entrySnapshot("local-preview").size)
+                    val sourceTrash = source.ledger().allEntries("local-preview").single {it.deletedAt!=null}
+                    val importedTrash = target.ledger().allEntries(owner).filter {it.deletedAt!=null}
+                    assertEquals(2,importedTrash.size)
+                    assertTrue(importedTrash.all {it.deletedAt==sourceTrash.deletedAt})
                 }
                 ui.onNodeWithText("查看电脑备份").assertDoesNotExist()
                 ui.onNodeWithTag("restore-backup").assertDoesNotExist()

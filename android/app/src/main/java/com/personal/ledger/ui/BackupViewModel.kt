@@ -28,8 +28,10 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
     val server = MutableStateFlow(app.getSharedPreferences("backup-settings-$vaultName", 0).getString("server", "") ?: "")
     val lastBackup = MutableStateFlow("尚未备份到电脑")
     val waiting = MutableStateFlow(false)
-    val duplicateCount = MutableStateFlow(0)
-    private var pendingImport: JSONObject? = null
+    data class BookImport(val label: String, val payload: JSONObject, val entries: List<Entry>,
+        val categories: Map<String,Category>, val duplicateIds: Set<String>, val targetDatabase: String, val targetOwner: String)
+    val bookImport = MutableStateFlow<BookImport?>(null)
+    val importSelection = MutableStateFlow<Set<String>>(emptySet())
     private var action: Job? = null
     val uploading = MutableStateFlow(BackgroundBackup.active(app,vaultName))
     private val jobPrefs = BackgroundBackup.prefs(app,vaultName)
@@ -210,11 +212,10 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
                     lastBackup.value = info(snapshot)
                 } else lastBackup.value = info(metadata)
                 if(mode == "register") {
-                    val payload = registrationPayload()
-                    store.importLocal(payload)
-                    message.value = "注册成功，已带入${payload.getJSONArray("entries").length()}笔本机账目；请点击备份到电脑"
+                    message.value = "注册成功，新账号为空账本。需要旧账目时，请从手机账本选择并确认导入"
                 } else message.value = if(dirty && metadata.getLong("revision") > (state?.cursor ?: 0L))
-                    "登录成功。手机有未备份修改，已保留；电脑另有更新版本，请勿覆盖上传" else "登录成功，账号账目已就绪"
+                    "登录成功。手机有未备份修改，已保留；电脑另有更新版本，请勿覆盖上传" else if(metadata.getLong("revision") == 0L)
+                    "登录成功，这个账号在当前电脑尚无成功备份；其他手机未上传的账目不会自动出现" else "登录成功，账号账目已就绪"
                 if(db.ledger().backupState(owner(result)) == null) db.ledger().setBackupState(SyncState(owner(result)))
                 saveAccount(result)
                 selectAccountBook()
@@ -257,37 +258,46 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         uploading.value = true
         BackgroundBackup.enqueue(app,vaultName,current)
     }
-    private suspend fun registrationPayload(): JSONObject {
-        val carry = carryVault.read() ?: return localPayload()
-        val name = carry.getString("database")
-        val db = LedgerDatabases.acquire(app,name)
-        try { return BackupStore(db,carry.getString("owner")).export() }
-        finally { LedgerDatabases.release(name) }
+    fun importSources(): List<JSONObject> {
+        val current = account.value ?: return emptyList()
+        val original = JSONObject().put("database",localDatabaseName).put("owner","local-preview").put("label","原本机账本")
+        return (listOf(original) + phoneBooks.books()).distinctBy { it.getString("database") to it.getString("owner") }
+            .filter { it.getString("database") != databaseName(current) || it.getString("owner") != owner(current) }
     }
-    private suspend fun localPayload(): JSONObject {
-        val original = LedgerDatabases.acquire(app, localDatabaseName)
-        try { return BackupStore(original, "local-preview").export() }
-        finally { LedgerDatabases.release(localDatabaseName) }
-    }
-    fun dismissImport() { pendingImport = null; duplicateCount.value = 0 }
-    fun importLocal(allowDuplicates: Boolean = false, fromSelected: Boolean = false) = run {
-        val payload = if(allowDuplicates) requireNotNull(pendingImport) { "请重新选择导入" } else if(fromSelected) {
-            val selected = requireNotNull(selectedBook.value)
-            require(selected.getString("database") != account.value?.let { databaseName(it) }) { "已经是当前账号账本，无需导入" }
-            val name = selected.getString("database")
-            val source = LedgerDatabases.acquire(app,name)
-            try { BackupStore(source,selected.getString("owner")).export() } finally { LedgerDatabases.release(name) }
-        } else localPayload()
-        require(payload.getJSONArray("entries").length() > 0) { "原本机账本没有账目" }
+    fun previewBookImport(book: JSONObject) = run {
+        require(!uploading.value) { "请等待当前备份完成" }
+        val current = requireNotNull(account.value) { "请先登录" }
+        require(importSources().any { it.getString("database") == book.getString("database") && it.getString("owner") == book.getString("owner") }) { "请选择有效的手机账本" }
+        val name = book.getString("database")
+        val source = LedgerDatabases.acquire(app,name)
+        val payload = try { BackupStore(source,book.getString("owner")).export() } finally { LedgerDatabases.release(name) }
+        val parsed = PortableSnapshot.parse(payload,owner(current))
+        require(parsed.entries.isNotEmpty()) { "这份账本没有可导入的账目" }
         store { store, _, _ ->
-            try {
-                val count = store.importLocal(payload, allowDuplicates)
-                dismissImport()
-                message.value = "已追加${count}笔本机账目，请点击备份到电脑；原账本保留"
-            } catch(e: BackupStore.DuplicateImport) {
-                pendingImport = payload
-                duplicateCount.value = e.count
-            }
+            bookImport.value = BookImport(book.optString("label","手机账本"),payload,parsed.entries,
+                parsed.categories.associateBy { it.id },store.duplicateIds(payload),databaseName(current),owner(current))
+            importSelection.value = emptySet()
+        }
+    }
+    fun toggleImport(id: String) {
+        if(busy.value || bookImport.value?.entries?.none {it.id==id} != false) return
+        importSelection.value = if(id in importSelection.value) importSelection.value - id else importSelection.value + id
+    }
+    fun selectAllImports(all: Boolean) { if(!busy.value) importSelection.value = if(all) bookImport.value?.entries?.map {it.id}?.toSet() ?: emptySet() else emptySet() }
+    fun dismissImport() { bookImport.value = null; importSelection.value = emptySet() }
+    fun confirmBookImport(includeDuplicates: Boolean) = run {
+        val preview = requireNotNull(bookImport.value) { "请重新选择来源账本" }
+        val current = requireNotNull(account.value) { "请先登录" }
+        require(databaseName(current) == preview.targetDatabase && owner(current) == preview.targetOwner) { "账号已改变，请重新预览" }
+        val selected = importSelection.value.toSet()
+        require(selected.isNotEmpty()) { "请至少选择一笔账目" }
+        val payload = JSONObject(preview.payload.toString())
+        val items = payload.getJSONArray("entries")
+        payload.put("entries",org.json.JSONArray((0 until items.length()).map {items.getJSONObject(it)}.filter {it.getString("id") in selected}))
+        store { store, _, _ ->
+            val count = store.append(payload,if(includeDuplicates) "include" else "skip")
+            dismissImport()
+            message.value = "已向当前登录账号追加${count}笔账目（含所选回收站），源账本保留；尚未上传到电脑"
         }
     }
     fun logout() = run {

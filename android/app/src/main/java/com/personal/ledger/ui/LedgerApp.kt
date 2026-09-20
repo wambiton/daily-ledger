@@ -46,6 +46,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
     var date by rememberSaveable { mutableStateOf(Rules.today().toString()) }
     var note by rememberSaveable { mutableStateOf("") }
     var entryId by rememberSaveable { mutableStateOf<String?>(null) }
+    var detailFromSearch by rememberSaveable { mutableStateOf(false) }
     var detailId by rememberSaveable { mutableStateOf<String?>(null) }
     var dirty by rememberSaveable { mutableStateOf(false) }
     var categoryReturn by rememberSaveable { mutableStateOf(false) }
@@ -77,6 +78,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
             route == "choose" && categoryReturn -> { route = "form"; categoryReturn = false }
             (route == "form" || route == "choose") && dirty -> discard = true
             route == "form" && entryId != null -> route = "detail"
+            route == "detail" && detailFromSearch -> route = "search"
             else -> route = "home"
         }
     }
@@ -90,7 +92,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(
-            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "trash" -> "回收站"; "files" -> "文件导入导出"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
+            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "search" -> "搜索与筛选"; "trash" -> "回收站"; "files" -> "文件导入导出"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
             navigationIcon = { if(route != "home") TextButton(onClick = { leave() }, enabled = !busy) { Text("返回") } },
             actions = { if(route == "home" && tab == 0) Text("本地保存", modifier = Modifier.padding(end = 20.dp), style = MaterialTheme.typography.labelMedium) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -103,28 +105,29 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
         floatingActionButton = { if(route == "home" && tab == 0 && ready) ExtendedFloatingActionButton(
             onClick = { beginNew(today.toString()) }, modifier = Modifier.testTag("new-entry")) { Text("＋ 记一笔") } },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+        Column(Modifier.padding(padding).fillMaxSize().imePadding().then(if(route == "search") Modifier else Modifier.verticalScroll(rememberScrollState())).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (!ready) {
                 Text("正在打开账本…")
                 if(!busy) Button(onClick = { vm.initialize() }) { Text("重试") }
             } else when(route) {
                 "home" -> if(tab == 0) {
+                    OutlinedButton(onClick = { route = "search" }, modifier = Modifier.fillMaxWidth().testTag("open-search")) { Text("搜索与筛选") }
                     DayCard("今天 · ${today.monthValue}月${today.dayOfMonth}日", entries.filter { it.date == today.toString() }, byId,
-                        onEntry = { detailId = it.id; route = "detail" }, compact = true, reveal = selectedDate == today.toString())
+                        onEntry = { detailFromSearch = false; detailId = it.id; route = "detail" }, compact = true, reveal = selectedDate == today.toString())
                     CalendarCard(YearMonth.parse(monthText), LocalDate.parse(selectedDate), entries.map { it.date }.toSet(),
                         onMonth = { monthText = it.toString() },
                         onJump = { chooseDate(selectedDate) { selectedDate = it.toString(); monthText = YearMonth.from(it).toString() } },
                         onDate = { selectedDate = it.toString() })
                     TextButton(onClick = { selectedDate = today.toString(); monthText = YearMonth.from(today).toString() }) { Text("回到今天") }
                     if(selectedDate != today.toString()) {
-                        DayCard(selectedDate, entries.filter { it.date == selectedDate }, byId, onEntry = { detailId = it.id; route = "detail" }, reveal = true)
+                        DayCard(selectedDate, entries.filter { it.date == selectedDate }, byId, onEntry = { detailFromSearch = false; detailId = it.id; route = "detail" }, reveal = true)
                         OutlinedButton(onClick = { beginNew(selectedDate) }, modifier = Modifier.fillMaxWidth()) { Text("补记这一天") }
                     }
                     Spacer(Modifier.height(90.dp))
                 } else if(tab == 1) {
                     screenState.SaveableStateProvider("comparison") {
-                        ComparisonScreen(entries, categories) { detailId = it.id; route = "detail" }
+                        ComparisonScreen(entries, categories) { detailFromSearch = false; detailId = it.id; route = "detail" }
                     }
                 } else {
                     BackupStatusCard(vm)
@@ -140,6 +143,9 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
                     OutlinedButton(onClick = { route = "files" }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("文件导入导出") }
                     OutlinedButton(onClick = { route = "trash" }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("回收站") }
                     OutlinedButton(onClick = { type = "expense"; route = "manage" }, modifier = Modifier.fillMaxWidth()) { Text("分类管理") }
+                }
+                "search" -> screenState.SaveableStateProvider("search") {
+                    SearchScreen(entries, categories, vm.owner) { detailFromSearch = true; detailId = it.id; route = "detail" }
                 }
                 "trash" -> TrashScreen(vm, byId, busy)
                 "files" -> FileToolsScreen(vm,busy)

@@ -56,6 +56,7 @@ fun AccountScreen(vm: BackupViewModel) {
     val message by vm.message.collectAsStateWithLifecycle()
     val waiting by vm.waiting.collectAsStateWithLifecycle()
     val status by vm.lastBackup.collectAsStateWithLifecycle()
+    val uploadResult by vm.uploadResult.collectAsStateWithLifecycle()
     val savedServer by vm.server.collectAsStateWithLifecycle()
     var address by rememberSaveable { mutableStateOf(savedServer) }
     LaunchedEffect(savedServer) { address = savedServer }
@@ -111,7 +112,10 @@ fun AccountScreen(vm: BackupViewModel) {
         } else {
             Text(account!!.getJSONObject("user").getString("email"), modifier = Modifier.testTag("signed-in-email"))
             Text(account!!.getString("server"), style = MaterialTheme.typography.bodySmall)
+            Text("电脑最近成功备份（历史记录，不代表本次上传）",style=MaterialTheme.typography.labelLarge)
             Text(status, modifier = Modifier.testTag("backup-status"))
+            Text("本次备份状态",style=MaterialTheme.typography.labelLarge)
+            Text(uploadResult,modifier=Modifier.testTag("upload-result"))
             Button(onClick = {
                 if(Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
                     notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else vm.upload()

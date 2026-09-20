@@ -22,6 +22,42 @@ import java.util.UUID
 
 class AccountBackupFlowTest {
     @get:Rule val ui = createComposeRule()
+    @Test fun oldComputerUploadIsBlockedWithoutAcknowledgingLocalChanges() {
+        val args=InstrumentationRegistry.getArguments()
+        Assume.assumeTrue(args.containsKey("old_email"))
+        val app=ApplicationProvider.getApplicationContext<Application>()
+        val namespace="legacy-test-${UUID.randomUUID()}"
+        val vm=BackupViewModel(app,namespace)
+        val holder=ViewModelStore().apply {put("vm",vm)}
+        try {
+            ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) {AccountScreen(vm)} } }
+            ui.runOnIdle {vm.signIn("http://127.0.0.1:8770",args.getString("old_email")!!,"12345678","","login")}
+            ui.waitUntil(30000) {!vm.busy.value}
+            val account=requireNotNull(vm.account.value)
+            val name=vm.databaseName(account);val owner=account.getJSONObject("user").getString("id")
+            val db=LedgerDatabases.acquire(app,name)
+            try {
+                runBlocking {
+                    val repo=LedgerRepository(db,owner);repo.seedDefaults()
+                    val cat=db.ledger().categorySnapshot(owner).first()
+                    repo.save(null,cat.type,cat.id,"9.99",LocalDate.of(2025,1,1),"must-stay-local")
+                }
+                val before=runBlocking {db.ledger().allEntries(owner)}
+                val pending=runBlocking {db.ledger().pending(owner)}
+                ui.onNodeWithTag("upload-backup").performScrollTo().performClick()
+                ui.waitUntil(30000) {vm.uploadResult.value.contains("电脑端版本较旧") && !vm.uploading.value}
+                ui.onNodeWithTag("upload-result").assertTextContains("本次备份未成功",substring=true)
+                assertFalse(vm.lastBackup.value.contains("版本 1"))
+                runBlocking {
+                    assertEquals(before,db.ledger().allEntries(owner))
+                    assertEquals(pending,db.ledger().pending(owner))
+                    assertEquals(0L,db.ledger().backupState(owner)!!.cursor)
+                }
+                ui.runOnIdle {vm.logout()};ui.waitUntil(30000) {!vm.busy.value}
+                assertEquals("当前账号尚未发起备份",vm.uploadResult.value)
+            } finally {LedgerDatabases.release(name)}
+        } finally {holder.clear()}
+    }
     @Test fun codeRequestDistinguishesOfflineComputerFromMailAuthenticationFailure() {
         Assume.assumeTrue(InstrumentationRegistry.getArguments().containsKey("backup_email"))
         val app=ApplicationProvider.getApplicationContext<Application>()

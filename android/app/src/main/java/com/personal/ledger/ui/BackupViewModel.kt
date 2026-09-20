@@ -27,6 +27,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
     val message = MutableStateFlow("")
     val server = MutableStateFlow(app.getSharedPreferences("backup-settings-$vaultName", 0).getString("server", "") ?: "")
     val lastBackup = MutableStateFlow("尚未备份到电脑")
+    val uploadResult = MutableStateFlow("当前账号尚未发起备份")
     val waiting = MutableStateFlow(false)
     data class BookImport(val label: String, val payload: JSONObject, val entries: List<Entry>,
         val categories: Map<String,Category>, val duplicateIds: Set<String>, val targetDatabase: String, val targetOwner: String)
@@ -35,11 +36,20 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
     private var action: Job? = null
     val uploading = MutableStateFlow(BackgroundBackup.active(app,vaultName))
     private val jobPrefs = BackgroundBackup.prefs(app,vaultName)
-    private val jobListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, _ ->
-        uploading.value = prefs.getBoolean("active",false)
-        message.value = prefs.getString("message","") ?: ""
-        prefs.getString("result",null)?.let { runCatching { lastBackup.value = info(JSONObject(it)) } }
+    private fun refreshUploadStatus(updateHistory: Boolean = false) {
+        val current = account.value
+        val belongs = current != null && jobPrefs.getString("database",null) == databaseName(current) && jobPrefs.getString("owner",null) == owner(current)
+        uploading.value = belongs && jobPrefs.getBoolean("active",false)
+        uploadResult.value = if(belongs) jobPrefs.getString("message","") ?: "" else "当前账号尚未发起备份"
+        if(belongs) {
+            message.value = uploadResult.value
+            if(updateHistory) jobPrefs.getString("result",null)?.let { raw -> runCatching {
+                val result=JSONObject(raw)
+                if(result.optString("account_database")==databaseName(current!!) && result.optString("account_owner")==owner(current)) lastBackup.value=info(result)
+            } }
+        }
     }
+    private val jobListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshUploadStatus(true) }
     override fun onCleared() { jobPrefs.unregisterOnSharedPreferenceChangeListener(jobListener);super.onCleared() }
     fun cancelUpload() { BackgroundBackup.cancel(app,vaultName);uploading.value = false }
 
@@ -48,6 +58,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         if(uploading.value) message.value = jobPrefs.getString("message", "正在后台等待电脑") ?: ""
         try {
             account.value = vault.read()
+            refreshUploadStatus()
             account.value?.let { phoneBooks.remember(phoneBooks.descriptor(it)) }
             val carried = carryVault.read()?.apply { if(!has("label")) put("label","扫码前的账号账本") }
             carried?.let { phoneBooks.remember(it) }
@@ -113,7 +124,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         }
     }
     private fun owner(a: JSONObject) = a.getJSONObject("user").getString("id")
-    private fun saveAccount(a: JSONObject) { vault.write(a); account.value = a;phoneBooks.remember(phoneBooks.descriptor(a));savedBooks.value = phoneBooks.books() }
+    private fun saveAccount(a: JSONObject) { vault.write(a); account.value = a;phoneBooks.remember(phoneBooks.descriptor(a));savedBooks.value = phoneBooks.books();refreshUploadStatus() }
     private fun run(block: suspend () -> Unit) {
         if(busy.value) return
         busy.value = true; message.value = ""
@@ -204,7 +215,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             try {
                 val store = BackupStore(db, owner(result))
                 val state = db.ledger().backupState(owner(result))
-                val rows = db.ledger().entrySnapshot(owner(result))
+                val rows = db.ledger().allEntries(owner(result))
                 val dirty = db.ledger().pending(owner(result)).any { it.entityType == "entry" } || pendingFile(result).baseFile.exists()
                 if(metadata.getLong("revision") > (state?.cursor ?: 0L) && !dirty && (state != null || rows.isEmpty())) {
                     val snapshot = fetch("backup/download/")
@@ -237,7 +248,11 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         }
     }
     private fun info(result: JSONObject): String = if(result.getLong("revision") == 0L) "这个账号尚无电脑备份" else
-        "电脑备份版本 ${result.getLong("revision")} · ${result.getInt("entry_count")} 笔\n${result.getString("created_at")}"
+        "电脑备份版本 ${result.getLong("revision")} · ${result.getInt("entry_count")} 笔\n${formatBackupTime(result.getString("created_at"))}"
+    private fun formatBackupTime(value: String): String = runCatching {
+        java.time.OffsetDateTime.parse(value).atZoneSameInstant(com.personal.ledger.domain.Rules.zone)
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+    }.getOrDefault(value)
     fun inspect() = run { lastBackup.value = info(authorized("backup/latest/")) }
     private suspend fun <T> store(block: suspend (BackupStore, JSONObject, LedgerDatabase) -> T): T {
         val a = requireNotNull(account.value) { "请先登录" }
@@ -310,7 +325,7 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             catch(_: Exception) { /* Local sign-out remains possible while the PC is off. */ }
         }
         a?.let { phoneBooks.remember(phoneBooks.descriptor(it)) }
-        dismissImport(); vault.clear(); account.value = null
+        dismissImport(); vault.clear(); account.value = null;lastBackup.value="尚未备份到电脑";refreshUploadStatus()
         val original=JSONObject().put("database",localDatabaseName).put("owner","local-preview").put("label","原本机账本")
         phoneBooks.select(original);selectedBook.value=original;savedBooks.value = phoneBooks.books()
         message.value = "已退出，账号账本仍可从手机账本列表打开，无需联网"

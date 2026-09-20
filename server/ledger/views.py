@@ -9,4 +9,5 @@ def health(request):
         cursor.execute('SELECT 1')
         ready = cursor.fetchone()[0] == 1
     return JsonResponse({'status':'ok' if ready else 'error','database':ready,
-                         'service': 'personal-ledger', 'mail_configured': settings.LEDGER_MAIL_READY})
+                         'service': 'personal-ledger', 'mail_configured': settings.LEDGER_MAIL_READY,
+                         'app_version': '0.6.1', 'backup_formats': [1, 2]})

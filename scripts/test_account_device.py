@@ -36,6 +36,8 @@ def main():
         User.objects.create_user(username=uuid.uuid4().hex, email=email, password='12345678', verified_at=timezone.now())
         waiting_email = 'waiting-' + uuid.uuid4().hex + '@qq.com'
         User.objects.create_user(username=uuid.uuid4().hex, email=waiting_email, password='12345678', verified_at=timezone.now())
+        old_email = 'legacy-' + uuid.uuid4().hex + '@qq.com'
+        User.objects.create_user(username=uuid.uuid4().hex, email=old_email, password='12345678', verified_at=timezone.now())
         register_email = 'register-' + uuid.uuid4().hex + '@qq.com'
         register_code = '654321'
         reset_email = 'reset-' + uuid.uuid4().hex + '@qq.com'
@@ -70,10 +72,26 @@ def main():
         server = make_server('127.0.0.1',8767,wrapped,handler_class=Handler)
         worker = threading.Thread(target=server.serve_forever, daemon=True)
         worker.start()
+        old_uploads = []
+        def legacy(environ,start_response):
+            if environ.get('PATH_INFO') == '/api/v1/health/':
+                start_response('200 OK',[('Content-Type','application/json')])
+                yield b'{"status":"ok","database":true,"service":"personal-ledger"}'
+                return
+            if environ.get('PATH_INFO') == '/api/v1/backup/':
+                old_uploads.append(True)
+                start_response('400 Bad Request',[('Content-Type','application/json')])
+                yield b'{"error":{"message":"old format rejected"}}'
+                return
+            yield from wrapped(environ,start_response)
+        legacy_server = make_server('127.0.0.1',8770,legacy,handler_class=Handler)
+        legacy_worker = threading.Thread(target=legacy_server.serve_forever,daemon=True)
+        legacy_worker.start()
         adb = str(ROOT / '.tools/android-sdk/platform-tools/adb.exe')
         serial = '3B159R0037100000'
         try:
             subprocess.run([adb,'-s',serial,'reverse','tcp:8767','tcp:8767'],check=True,capture_output=True)
+            subprocess.run([adb,'-s',serial,'reverse','tcp:8770','tcp:8770'],check=True,capture_output=True)
             # Some realme builds deny shell permission grants; accept the app's
             # user-authorized notification prompt through its normal system UI.
             permission_stop = threading.Event()
@@ -95,14 +113,17 @@ def main():
                     except Exception: pass
             threading.Thread(target=allow_notification,daemon=True).start()
             result = subprocess.run([adb,'-s',serial,'shell','am','instrument','-w','-e','notClass','com.personal.ledger.ExternalBackupFlowTest','-e','backup_email',email,'-e','waiting_email',waiting_email,'-e','register_email',register_email,'-e','register_code',register_code,
-                '-e','reset_email',reset_email,'com.personal.ledger.test/androidx.test.runner.AndroidJUnitRunner'],capture_output=True,timeout=240)
+                '-e','old_email',old_email,'-e','reset_email',reset_email,'com.personal.ledger.test/androidx.test.runner.AndroidJUnitRunner'],capture_output=True,timeout=240)
             permission_stop.set()
             output = result.stdout.decode('utf-8',errors='replace')
             print(output)
-            if result.returncode or 'OK (20 tests)' not in output or 'FAILURES' in output:
+            if result.returncode or 'OK (21 tests)' not in output or 'FAILURES' in output:
                 raise RuntimeError('Device suite failed')
+            assert not old_uploads, 'Legacy service must be blocked before upload'
         finally:
             subprocess.run([adb,'-s',serial,'reverse','--remove','tcp:8767'],capture_output=True)
+            subprocess.run([adb,'-s',serial,'reverse','--remove','tcp:8770'],capture_output=True)
+            legacy_server.shutdown(); legacy_worker.join(); legacy_server.server_close()
             server.shutdown(); worker.join(); server.server_close(); connections.close_all()
 
 if __name__ == '__main__':

@@ -54,6 +54,9 @@ object BackgroundBackup {
     }
     fun enqueue(context: Context, namespace: String, account: JSONObject) {
         if(active(context,namespace)) return
+        prefs(context,namespace).edit().putString("database",ComputerPair.databaseName(account))
+            .putString("owner",account.getJSONObject("user").getString("id")).remove("result")
+            .putString("message","正在等待电脑连接，连接后自动备份").apply()
         status(context,namespace,"正在等待电脑连接，连接后自动备份",true)
         val request = OneTimeWorkRequestBuilder<BackupUploadWorker>()
             .setInputData(workDataOf("namespace" to namespace,"database" to ComputerPair.databaseName(account)))
@@ -107,6 +110,9 @@ class BackupUploadWorker(context: Context, parameters: WorkerParameters): Corout
                 var account = vault.read() ?: throw IllegalArgumentException("请重新登录后备份")
                 require(ComputerPair.databaseName(account) == expected) { "已切换账号或电脑，请重新发起备份" }
                 val owner = account.getJSONObject("user").getString("id")
+                val client = ComputerPair.client(account)
+                // Check the live service, not a saved QR or previously installed version.
+                BackupCompatibility.requireSupported(client.call("health/"))
                 val db = LedgerDatabases.acquire(applicationContext,expected)
                 try {
                     val store = BackupStore(db,owner)
@@ -117,7 +123,6 @@ class BackupUploadWorker(context: Context, parameters: WorkerParameters): Corout
                         catch(e: Exception) { file.failWrite(stream);throw e }
                     }
                     if(!BackgroundBackup.active(applicationContext,namespace) || isStopped) return@withLock
-                    val client = ComputerPair.client(account)
                     val body = JSONObject(pending.toString()).apply { remove("pending_ids") }
                     val response = try { client.call("backup/",body,account.getString("access_token")) }
                     catch(e: BackupApiException) {
@@ -130,6 +135,7 @@ class BackupUploadWorker(context: Context, parameters: WorkerParameters): Corout
                     val ids = pending.getJSONArray("pending_ids")
                     store.acknowledge(response.getLong("revision"),(0 until ids.length()).map { ids.getString(it) })
                     file.delete()
+                    response.put("account_database",expected).put("account_owner",owner)
                     BackgroundBackup.status(applicationContext,namespace,"备份成功；之后新增的修改请再次备份",false,response.toString())
                 } finally { LedgerDatabases.release(expected) }
             }
@@ -140,7 +146,8 @@ class BackupUploadWorker(context: Context, parameters: WorkerParameters): Corout
                 if(BackgroundBackup.active(applicationContext,namespace)) BackgroundBackup.status(applicationContext,namespace,"电脑尚未连接，请等候；正在后台重试",true)
                 Result.retry()
             } else {
-                BackgroundBackup.status(applicationContext,namespace,e.message ?: "备份失败，请重新登录或扫码",false)
+                val detail = if(e.status == 400) "电脑拒绝了本次备份数据，请确认两端版本一致并保留账目联系排查；这不是需要手动填写的内容" else e.message ?: "请重新登录或扫码"
+                BackgroundBackup.status(applicationContext,namespace,"本次备份未成功：$detail。手机账目保留",false)
                 Result.failure()
             }
         } catch(_: java.io.IOException) {

@@ -51,6 +51,8 @@ def main():
             except Exception:process.terminate();process.wait(timeout=10);raise
         process=start()
         try:
+            status,health=call('health/')
+            assert status==200 and health['app_version']=='0.6.1' and 2 in health['backup_formats']
             status,account=call('auth/login/',{'email':email,'password':'12345678'});assert status==200
             category=str(uuid.uuid4());entry=str(uuid.uuid4())
             payload={'format_version':2,'categories':[{'id':category,'type':'expense','name':'餐饮','default_key':None}],

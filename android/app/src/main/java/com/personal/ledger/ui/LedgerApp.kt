@@ -116,6 +116,8 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
                     OutlinedButton(onClick = { route = "search" }, modifier = Modifier.fillMaxWidth().testTag("open-search")) { Text("搜索与筛选") }
                     OutlinedButton(onClick = { route = "budget" }, modifier = Modifier.fillMaxWidth().testTag("open-budget")) { Text("预算计划与提醒") }
                     val budgetAlerts by vm.budgetNotices.collectAsStateWithLifecycle()
+                    val budgetPlans by vm.budgets.collectAsStateWithLifecycle()
+                    if(budgetPlans.any {it.endMonth < YearMonth.from(today).toString() && !it.renewalDismissed}) Text("预算计划已到期，请进入预算页面安排下一期")
                     if(budgetAlerts.isNotEmpty()) Text("${budgetAlerts.size}项预算达到提醒阈值，点击预算计划查看", color=MaterialTheme.colorScheme.error)
                     DayCard("今天 · ${today.monthValue}月${today.dayOfMonth}日", entries.filter { it.date == today.toString() }, byId,
                         onEntry = { detailFromSearch = false; detailId = it.id; route = "detail" }, compact = true, reveal = selectedDate == today.toString())

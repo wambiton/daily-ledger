@@ -19,6 +19,8 @@ class BackupCompatibilityTest {
     }
     @Test fun supportedFormatsPermitCurrentBackup() {
         BackupCompatibility.requireSupported(JSONObject("""{"backup_formats":[1,2]}"""))
+        assertTrue(runCatching {BackupCompatibility.requireSupported(JSONObject("""{"backup_formats":[1,2]}"""),3)}.isFailure)
+        BackupCompatibility.requireSupported(JSONObject("""{"backup_formats":[1,2,3]}"""),3)
         assertTrue(runCatching {BackupCompatibility.requireSupported(JSONObject("""{"backup_formats":[1]}"""))}.isFailure)
     }
 }

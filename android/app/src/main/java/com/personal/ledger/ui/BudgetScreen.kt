@@ -36,15 +36,15 @@ fun BudgetScreen(vm: LedgerViewModel, busy: Boolean) {
     val draft by vm.budgetDraft.collectAsStateWithLifecycle()
     val context=LocalContext.current
     var currentMonth by remember { mutableStateOf(YearMonth.from(Rules.today()).toString()) }
-    var notifications by remember { mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled()) }
+    var notifications by remember { mutableStateOf(BudgetNotifications.allowed(context)) }
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-        notifications=NotificationManagerCompat.from(context).areNotificationsEnabled()
+        notifications=BudgetNotifications.allowed(context)
     }
     LaunchedEffect(vm) {
         while(true) {
             vm.refreshBudgets()
             currentMonth=YearMonth.from(Rules.today()).toString()
-            notifications=NotificationManagerCompat.from(context).areNotificationsEnabled()
+            notifications=BudgetNotifications.allowed(context)
             delay(60000)
         }
     }
@@ -59,7 +59,7 @@ fun BudgetScreen(vm: LedgerViewModel, busy: Boolean) {
             Button(onClick={vm.newBudget()},enabled=!busy,modifier=Modifier.fillMaxWidth().testTag("new-budget")) {Text("新建预算计划")}
             Text(if(notifications) "系统通知已允许；也可在本页查看提醒" else "系统通知未开启，软件内提醒仍有效")
             TextButton(onClick={
-                if(Build.VERSION.SDK_INT >= 33 && !notifications) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                if(Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 else context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName))
             }) {Text("设置预算通知")}
         }
@@ -114,8 +114,10 @@ fun BudgetEditor(initial: BudgetPlan, categories: List<Category>, plans: List<Bu
     }.toString()) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var selectMonth by remember { mutableStateOf(false) }
+    var trimOutside by remember { mutableStateOf(false) }
     val months=runCatching {BudgetRules.months(initial.copy(startMonth=start,endMonth=end))}.getOrDefault(emptyList())
     val values=JSONObject(raw)
+    val outside=values.keys().asSequence().filter { it !in months }.toList()
     fun parse(): Map<String,Map<String,Long>> = values.keys().asSequence().associateWith { m ->
         val cats=values.getJSONObject(m)
         cats.keys().asSequence().filter {cats.getString(it).isNotBlank()}.associateWith {Rules.amount(cats.getString(it))}
@@ -130,6 +132,10 @@ fun BudgetEditor(initial: BudgetPlan, categories: List<Category>, plans: List<Bu
         item {OutlinedTextField(total,{total=it},label={Text("全期总预算（元）")},enabled=!busy,singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth().testTag("budget-total"))}
         item {
             Text("选择连续月份，单月可超过月均值；所有月份的分类分配合计不能超过总额。")
+            if(months.isNotEmpty() && outside.isNotEmpty()) {
+                Text("调整月份后，${outside.joinToString()}的分配在计划范围外，需确认移除后再保存。")
+                TextButton(onClick={trimOutside=true},enabled=!busy) {Text("移除范围外的分配")}
+            }
             val sum=runCatching {parse().values.sumOf{it.values.sum()}}.getOrNull()
             if(sum!=null) Text("已分配 ¥${Rules.money(sum)}")
             OutlinedButton(onClick={selectMonth=true},enabled=months.isNotEmpty()&&!busy) {Text("编辑分类月份：$month")}
@@ -162,6 +168,9 @@ fun BudgetEditor(initial: BudgetPlan, categories: List<Category>, plans: List<Bu
             OutlinedButton(onClick=onCancel,enabled=!busy,modifier=Modifier.fillMaxWidth()) {Text("取消本次编辑")}
         }
     }
+    if(trimOutside) AlertDialog(onDismissRequest={trimOutside=false},title={Text("移除范围外的分类分配？")},text={Text(outside.joinToString()+"；只修改当前草稿，保存计划后生效。")},
+        confirmButton={TextButton(onClick={raw=JSONObject(raw).apply {outside.forEach{remove(it)}}.toString();trimOutside=false}){Text("确认移除")}},
+        dismissButton={TextButton(onClick={trimOutside=false}){Text("保留")}})
     if(selectMonth) AlertDialog(onDismissRequest={selectMonth=false},title={Text("选择分类月份")},text={
         LazyColumn(Modifier.heightIn(max=360.dp)) {items(months){m -> TextButton(onClick={month=m;selectMonth=false}){Text(m)}}}
     },confirmButton={TextButton(onClick={selectMonth=false}){Text("取消")}})

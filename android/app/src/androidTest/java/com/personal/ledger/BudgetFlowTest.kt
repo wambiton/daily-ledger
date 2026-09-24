@@ -45,6 +45,12 @@ class BudgetFlowTest {
         ui.runOnIdle {vm.restoreDeleted(id)}
         ui.waitUntil(10000){vm.budgetNotices.value.singleOrNull()?.level==100}
         Assert.assertEquals(plan,vm.budgets.value.single())
+        val app=ApplicationProvider.getApplicationContext<Application>()
+        if(BudgetNotifications.allowed(app)) {
+            ui.waitUntil(10000) { app.getSystemService(android.app.NotificationManager::class.java).activeNotifications.any {
+                it.tag?.contains(plan.id)==true && it.notification.channelId=="ledger-budget"
+            } }
+        }
     }
     @Test fun invalidBudgetAllocationIsRejectedWithoutChangingSavedPlan() {
         val cat=vm.categories.value.first{it.type=="expense"}
@@ -65,4 +71,25 @@ class BudgetFlowTest {
         ui.waitUntil(10000){vm.budgets.value.size==1}
         Assert.assertEquals(8000L,BudgetRules.allocations(vm.budgets.value.single().allocations).values.single().getValue(cat.id))
     }
+    @Test fun shorteningPlanRequiresExplicitRemovalOfOutsideAllocation() {
+        ui.onNodeWithTag("open-budget").performScrollTo().performClick()
+        val cat=vm.categories.value.first{it.type=="expense"}
+        val plan=BudgetPlan(UUID.randomUUID().toString(),vm.owner,"未来安排","2027-01","2027-02",10000,
+            BudgetRules.encode(mapOf("2027-01" to mapOf(cat.id to 5000L),"2027-02" to mapOf(cat.id to 5000L))))
+        ui.runOnIdle {vm.saveBudget(plan)}
+        ui.waitUntil(10000){vm.budgets.value.size==1 && !vm.busy.value}
+        ui.runOnIdle {vm.editBudget(plan)}
+        ui.onNodeWithTag("budget-end").performTextReplacement("2027-01")
+        ui.onNodeWithTag("budget-editor").performScrollToNode(hasText("移除范围外的分配"))
+        ui.onNodeWithText("移除范围外的分配").performClick()
+        ui.onNodeWithText("保留").performClick()
+        Assert.assertEquals(plan,vm.budgets.value.single())
+        ui.onNodeWithText("移除范围外的分配").performClick()
+        ui.onNodeWithText("确认移除").performClick()
+        ui.onNodeWithTag("budget-editor").performScrollToNode(hasTestTag("save-budget"))
+        ui.onNodeWithTag("save-budget").performClick()
+        ui.waitUntil(10000){vm.budgets.value.single().endMonth=="2027-01" && !vm.busy.value}
+        Assert.assertEquals(setOf("2027-01"),BudgetRules.allocations(vm.budgets.value.single().allocations).keys)
+    }
+
 }

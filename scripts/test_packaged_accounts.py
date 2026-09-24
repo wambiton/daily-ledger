@@ -52,11 +52,13 @@ def main():
         process=start()
         try:
             status,health=call('health/')
-            assert status==200 and health['app_version']=='0.6.1' and 2 in health['backup_formats']
+            assert status==200 and health['app_version']=='0.7.0' and 3 in health['backup_formats']
             status,account=call('auth/login/',{'email':email,'password':'12345678'});assert status==200
             category=str(uuid.uuid4());entry=str(uuid.uuid4())
-            payload={'format_version':2,'categories':[{'id':category,'type':'expense','name':'餐饮','default_key':None}],
+            payload={'format_version':3,'categories':[{'id':category,'type':'expense','name':'餐饮','default_key':None}],
                 'entries':[{'id':entry,'type':'expense','category_id':category,'amount_fen':1234,'date':'2026-09-15','note':'synthetic','created_at':1,'updated_at':2,'deleted_at':None}]}
+            payload['budgets']=[{'id':str(uuid.uuid4()),'name':'季度预算','start_month':'2026-09','end_month':'2026-11',
+                'total_fen':450000,'allocations':{'2026-09':{category:170000},'2026-10':{category:130000}},'renewal_dismissed':False}]
             payload['entries'].append({**payload['entries'][0], 'id':str(uuid.uuid4()), 'note':'synthetic trash', 'deleted_at':2})
             assert call('backup/',{'operation_id':str(uuid.uuid4()),'base_revision':0,'payload':payload},account['access_token'])[0]==200
             status,result=call('auth/reset/',{'email':email,'password':'abcdefgh','code':'654321'})

@@ -41,7 +41,7 @@ def main():
     computer = identity(folder)
     if not args.smoke_test and (folder/'accounts.sqlite3').exists():
         remember_data_folder(folder)
-    root = tk.Tk(); root.title('个人记账 · 电脑备份 0.6.1'); root.geometry('850x770'); root.minsize(760,660)
+    root = tk.Tk(); root.title('个人记账 · 电脑备份 0.7.0'); root.geometry('850x770'); root.minsize(760,660)
     events = queue.Queue(); processes = []; stopped = threading.Event(); closing = False; started = False
     style = ttk.Style(); style.theme_use('clam'); style.configure('.', font=('Microsoft YaHei UI', 10))
     panel = ttk.Frame(root, padding=22); panel.pack(fill='both', expand=True)

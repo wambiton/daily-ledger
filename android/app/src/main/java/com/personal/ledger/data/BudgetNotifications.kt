@@ -15,10 +15,13 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 
 object BudgetNotifications {
+    fun allowed(context: Context): Boolean = NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+        context.getSystemService(NotificationManager::class.java).getNotificationChannel("ledger-budget")?.importance != NotificationManager.IMPORTANCE_NONE
+
     fun send(context: Context, database: String, notices: List<BudgetNotice>) {
         val manager=context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("ledger-budget","预算提醒",NotificationManager.IMPORTANCE_DEFAULT))
-        if(!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        if(!allowed(context)) return
         notices.forEach { notice ->
             val intent=PendingIntent.getActivity(context,0,Intent(context,MainActivity::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val notification=NotificationCompat.Builder(context,"ledger-budget").setSmallIcon(android.R.drawable.ic_dialog_info)

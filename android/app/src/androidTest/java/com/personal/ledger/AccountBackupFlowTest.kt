@@ -142,6 +142,8 @@ class AccountBackupFlowTest {
                 repo.seedDefaults()
                 val cat = db.ledger().categorySnapshot(owner).first { it.type == "expense" }
                 repo.save(null,"expense",cat.id,"45.67",LocalDate.of(2025,3,4),"synthetic-device-backup")
+                BudgetRepository(db,owner).save(BudgetPlan(UUID.randomUUID().toString(),owner,"季度预算","2025-03","2025-05",450000,
+                    BudgetRules.encode(mapOf("2025-03" to mapOf(cat.id to 170000L),"2025-04" to mapOf(cat.id to 130000L)))))
             }
             ui.onNodeWithTag("upload-backup").performScrollTo().performClick()
             ui.waitUntil(60000) { vm.message.value.startsWith("备份成功") }
@@ -161,6 +163,9 @@ class AccountBackupFlowTest {
                 runBlocking {
                     assertEquals(db.ledger().entrySnapshot(owner),secondDb.ledger().entrySnapshot(owner))
                     assertEquals(4567L,secondDb.ledger().entrySnapshot(owner).single().amountFen)
+                    assertEquals(db.ledger().budgetSnapshot(owner),secondDb.ledger().budgetSnapshot(owner))
+                    assertEquals(450000L,secondDb.ledger().budgetSnapshot(owner).single().totalFen)
+                    assertTrue(secondDb.ledger().budgetSnapshot("unrelated-account").isEmpty())
                     assertTrue(secondDb.ledger().entrySnapshot("unrelated-account").isEmpty())
                     assertEquals(1L,secondDb.ledger().backupState(owner)!!.cursor)
                 }

@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteConstraintException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
+import androidx.room.withTransaction
 import com.personal.ledger.data.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
@@ -25,6 +26,12 @@ class LedgerViewModel @JvmOverloads constructor(application: Application, privat
     val categories = repo.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val entries = repo.entries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val trash = repo.trash.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val budgets = db.ledger().budgets(owner).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val budgetNotices = db.ledger().notices(owner).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val budgetWarnings = MutableStateFlow<List<String>>(emptyList())
+    val budgetDraft = MutableStateFlow<BudgetPlan?>(null)
+    private var renewalSource: BudgetPlan? = null
+    private val budgetRepo = BudgetRepository(db,owner)
     val ready = MutableStateFlow(false)
     val busy = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
@@ -86,15 +93,48 @@ class LedgerViewModel @JvmOverloads constructor(application: Application, privat
     fun confirmImport(includeDuplicates: Boolean) = runAction {
         val payload = requireNotNull(importPayload) { "请重新选择备份文件" }
         val count = BackupStore(db,owner).append(payload,if(includeDuplicates) "include" else "skip")
-        cancelImport(); fileMessage.value = "已追加导入${count}笔（含回收站），原账目保留。"
+        cancelImport(); fileMessage.value = "已追加导入${count}笔（含回收站），原账目保留。预算计划未合并。"
     }
 
-    init { initialize() }
+    init {
+        initialize()
+        viewModelScope.launch {
+            combine(db.ledger().entries(owner),db.ledger().budgets(owner)) { _, _ -> Unit }.collect {
+                refreshBudgets()
+            }
+        }
+    }
+    suspend fun refreshBudgets() {
+        try {
+            budgetWarnings.value=budgetRepo.inheritDue(java.time.YearMonth.from(com.personal.ledger.domain.Rules.today()))
+            BudgetNotifications.send(getApplication(),databaseName,budgetRepo.reconcile())
+        } catch(e: CancellationException) { throw e }
+        catch(_: Exception) { budgetWarnings.value=listOf("预算提醒检查暂未完成，请重新打开账本重试") }
+    }
+    fun newBudget(previous: BudgetPlan? = null, copy: Boolean = false) {
+        renewalSource=previous
+        val start=previous?.let { java.time.YearMonth.parse(it.endMonth).plusMonths(1).toString() }
+            ?: java.time.YearMonth.from(com.personal.ledger.domain.Rules.today()).toString()
+        budgetDraft.value=if(previous != null && copy) budgetRepo.nextPeriod(previous) else
+            BudgetPlan(java.util.UUID.randomUUID().toString(),owner,"",start,start,1)
+    }
+    fun editBudget(plan: BudgetPlan) { renewalSource=null; budgetDraft.value=plan }
+    fun cancelBudget() { budgetDraft.value=null; renewalSource=null }
+    fun saveBudget(plan: BudgetPlan) = runAction {
+        db.withTransaction {
+            budgetRepo.save(plan)
+            renewalSource?.let { budgetRepo.dismissRenewal(it) }
+        }
+        cancelBudget()
+    }
+    fun dismissBudgetRenewal(plan: BudgetPlan) = runAction { budgetRepo.dismissRenewal(plan) }
+
     override fun onCleared() { LedgerDatabases.release(databaseName) }
     fun initialize() = runAction {
         repo.seedDefaults()
         repo.purgeExpired()
         TrashCleanup.schedule(getApplication(), databaseName, owner)
+        BudgetNotifications.schedule(getApplication(),databaseName,owner)
         ready.value = true
     }
     fun addCategory(type: String, name: String, complete: (Category) -> Unit) = runAction {

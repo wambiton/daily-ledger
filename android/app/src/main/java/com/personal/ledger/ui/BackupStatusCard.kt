@@ -24,7 +24,7 @@ fun BackupStatusCard(vm: LedgerViewModel) {
             Text("正常账目${entries.size}笔 · 回收站${trash.size}笔")
             Text(when {
                 pending > 0 -> "${pending}笔账目变更待备份（同一笔多次修改只算一笔）"
-                changes > 0 -> "分类变更待备份"
+                changes > 0 -> "分类或预算设置变更待备份"
                 state?.lastSuccessAt == null -> "尚无电脑备份成功记录"
                 else -> "当前手机账本没有待上传修改"
             },modifier=Modifier.testTag("pending-backup-summary"))

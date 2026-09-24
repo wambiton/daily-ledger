@@ -48,8 +48,25 @@ data class SyncState(@PrimaryKey val owner: String, val cursor: Long = 0, val la
 @Entity(tableName = "imported_sources", primaryKeys = ["owner", "sourceId"])
 data class ImportedSource(val owner: String, val sourceId: String)
 
+@Entity(tableName = "budget_plans", indices = [Index("owner")])
+data class BudgetPlan(@PrimaryKey val id: String, val owner: String, val name: String,
+    val startMonth: String, val endMonth: String, val totalFen: Long,
+    val allocations: String = "{}", val renewalDismissed: Boolean = false)
+
+@Entity(tableName = "budget_notices", primaryKeys = ["owner", "key"])
+data class BudgetNotice(val owner: String, val key: String, val level: Int, val message: String)
+
 @Dao
 interface LedgerDao {
+    @Query("SELECT * FROM budget_plans WHERE owner = :owner ORDER BY startMonth DESC") fun budgets(owner: String): Flow<List<BudgetPlan>>
+    @Query("SELECT * FROM budget_plans WHERE owner = :owner ORDER BY startMonth") suspend fun budgetSnapshot(owner: String): List<BudgetPlan>
+    @Upsert suspend fun putBudget(plan: BudgetPlan)
+    @Query("DELETE FROM budget_plans WHERE owner = :owner") suspend fun clearBudgets(owner: String)
+    @Query("SELECT * FROM budget_notices WHERE owner = :owner") suspend fun noticeSnapshot(owner: String): List<BudgetNotice>
+    @Query("SELECT * FROM budget_notices WHERE owner = :owner AND level > 0") fun notices(owner: String): Flow<List<BudgetNotice>>
+    @Upsert suspend fun putNotice(notice: BudgetNotice)
+    @Query("DELETE FROM budget_notices WHERE owner = :owner") suspend fun clearNotices(owner: String)
+
     @Query("SELECT * FROM entries WHERE owner = :owner ORDER BY createdAt, id") suspend fun allEntries(owner: String): List<Entry>
     @Query("SELECT * FROM entries WHERE owner = :owner AND deletedAt IS NOT NULL ORDER BY deletedAt DESC") fun trash(owner: String): Flow<List<Entry>>
     @Query("DELETE FROM entries WHERE owner = :owner AND deletedAt IS NOT NULL AND deletedAt <= :cutoff") suspend fun purgeTrash(owner: String, cutoff: Long): Int
@@ -81,5 +98,5 @@ interface LedgerDao {
     @Query("SELECT * FROM outbox WHERE owner = :owner ORDER BY createdAt, rowid") suspend fun pending(owner: String): List<PendingOperation>
 }
 
-@Database(entities = [Category::class, Entry::class, PendingOperation::class, SyncState::class, ImportedSource::class], version = 2, exportSchema = true, autoMigrations = [AutoMigration(from = 1, to = 2)])
+@Database(entities = [Category::class, Entry::class, PendingOperation::class, SyncState::class, ImportedSource::class, BudgetPlan::class, BudgetNotice::class], version = 3, exportSchema = true, autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)])
 abstract class LedgerDatabase : RoomDatabase() { abstract fun ledger(): LedgerDao }

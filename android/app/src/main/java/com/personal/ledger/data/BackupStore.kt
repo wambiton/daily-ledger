@@ -18,7 +18,10 @@ class BackupStore(private val db: LedgerDatabase, private val owner: String) {
         dao.allEntries(owner).filter { it.deletedAt == null || it.deletedAt > System.currentTimeMillis() - LedgerRepository.RETENTION_MS }.forEach { e -> entries.put(JSONObject().put("id", e.id).put("type", e.type)
             .put("category_id", e.categoryId).put("amount_fen", e.amountFen).put("date", e.date).put("note", e.note)
             .put("created_at", e.createdAt).put("updated_at", e.updatedAt).put("deleted_at", e.deletedAt ?: JSONObject.NULL)) }
-        JSONObject().put("format_version", 2).put("categories", cats).put("entries", entries).put("import_sources", JSONArray(dao.importedSources(owner)))
+        val budgets = dao.budgetSnapshot(owner)
+        JSONObject().put("format_version", if(budgets.isEmpty()) 2 else 3).put("categories", cats).put("entries", entries).put("import_sources", JSONArray(dao.importedSources(owner))).apply {
+            if(budgets.isNotEmpty()) put("budgets",BudgetSnapshot.encode(budgets))
+        }
     }
     class DuplicateImport(val count: Int): IllegalArgumentException("已有${count}笔本机账目重复导入")
 
@@ -77,13 +80,19 @@ class BackupStore(private val db: LedgerDatabase, private val owner: String) {
     suspend fun restore(payload: JSONObject, revision: Long, requireEmpty: Boolean = false) = db.withTransaction {
         require(revision >= 0)
         val parsed = PortableSnapshot.parse(payload, owner)
-        if(requireEmpty) require(dao.allEntries(owner).isEmpty()) { "当前账号已有账目，不能替换账本" }
+        if(requireEmpty) require(dao.allEntries(owner).isEmpty() && dao.budgetSnapshot(owner).isEmpty()) { "当前账号已有账目，不能替换账本" }
         val categories = parsed.categories
         val entries = parsed.retained(System.currentTimeMillis())
         val sourceIds = parsed.sources
         dao.clearImported(owner)
         sourceIds.forEach { dao.markImported(ImportedSource(owner, it)) }
+        // A legacy snapshot contains no budget information: preserve existing local plans.
+        // Their category references must remain valid; never silently orphan them.
+        val savedBudgets = if(payload.getInt("format_version") < 3) dao.budgetSnapshot(owner) else parsed.budgets
+        savedBudgets.forEach { BudgetRules.validate(it,savedBudgets,categories) }
         dao.clearEntries(owner); dao.clearOutbox(owner); dao.clearCategories(owner)
+        dao.clearBudgets(owner); dao.clearNotices(owner)
+        savedBudgets.forEach { dao.putBudget(it) }
         categories.forEach { dao.insertCategory(it) }
         entries.forEach { dao.upsertEntry(it) }
         dao.setBackupState(SyncState(owner, revision, if(revision > 0) System.currentTimeMillis() else null))

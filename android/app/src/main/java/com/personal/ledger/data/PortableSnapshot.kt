@@ -7,7 +7,7 @@ import java.time.LocalDate
 import java.util.UUID
 
 /** Parse the entire file before any write. No credentials or database filenames are accepted. */
-data class PortableSnapshot(val categories: List<Category>, val entries: List<Entry>, val sources: List<String>) {
+data class PortableSnapshot(val categories: List<Category>, val entries: List<Entry>, val sources: List<String>, val budgets: List<BudgetPlan> = emptyList()) {
     companion object {
         fun parse(payload: JSONObject, owner: String): PortableSnapshot {
             fun id(value: String): String = value.also { require(UUID.fromString(it).toString() == it) }
@@ -20,9 +20,11 @@ data class PortableSnapshot(val categories: List<Category>, val entries: List<En
                 val actual = o.keys().asSequence().toSet()
                 require(actual.containsAll(required) && allowed.containsAll(actual)) { "备份字段不正确" }
             }
-            keys(payload,setOf("format_version","categories","entries","import_sources"),setOf("format_version","categories","entries"))
+            val hasBudgets = payload.optInt("format_version") == 3
+            keys(payload, setOf("format_version","categories","entries","import_sources") + (if(hasBudgets) setOf("budgets") else emptySet()),
+                setOf("format_version","categories","entries") + (if(hasBudgets) setOf("budgets") else emptySet()))
             val version = number(payload,"format_version")
-            require(version == 1L || version == 2L) { "备份版本不支持，请更新软件" }
+            require(version in 1L..3L) { "备份版本不支持，请更新软件" }
             val cats = payload.getJSONArray("categories"); val items = payload.getJSONArray("entries")
             require(cats.length() <= 2000 && items.length() <= 50000) { "备份记录过多" }
             val categories = (0 until cats.length()).map { i ->
@@ -39,7 +41,7 @@ data class PortableSnapshot(val categories: List<Category>, val entries: List<En
             val entries = (0 until items.length()).map { i ->
                 val e = items.getJSONObject(i)
                 val fields = setOf("id","type","category_id","amount_fen","date","note","created_at","updated_at")
-                keys(e,if(version == 2L) fields + "deleted_at" else fields)
+                keys(e,if(version >= 2L) fields + "deleted_at" else fields)
                 val c = requireNotNull(byId[e.getString("category_id")]) { "备份缺少分类" }
                 require(e.getString("type") == c.type)
                 val amount = number(e,"amount_fen"); require(amount in 1..99999999999L)
@@ -56,7 +58,7 @@ data class PortableSnapshot(val categories: List<Category>, val entries: List<En
             val sourceArray = if(payload.has("import_sources")) payload.getJSONArray("import_sources") else JSONArray()
             require(sourceArray.length() <= 50000)
             val sources = (0 until sourceArray.length()).map { id(sourceArray.getString(it)) }
-            return PortableSnapshot(categories,entries,sources)
+            return PortableSnapshot(categories,entries,sources,if(hasBudgets) BudgetSnapshot.parse(payload.getJSONArray("budgets"),owner,categories) else emptyList())
         }
     }
     fun retained(now: Long) = entries.filter { it.deletedAt == null || it.deletedAt > now - LedgerRepository.RETENTION_MS }

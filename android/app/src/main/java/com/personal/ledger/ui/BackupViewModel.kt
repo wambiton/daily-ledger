@@ -216,8 +216,8 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
                 val store = BackupStore(db, owner(result))
                 val state = db.ledger().backupState(owner(result))
                 val rows = db.ledger().allEntries(owner(result))
-                val dirty = db.ledger().pending(owner(result)).any { it.entityType == "entry" } || pendingFile(result).baseFile.exists()
-                if(metadata.getLong("revision") > (state?.cursor ?: 0L) && !dirty && (state != null || rows.isEmpty())) {
+                val dirty = db.ledger().pending(owner(result)).any { it.entityType == "entry" || it.entityType == "budget" } || pendingFile(result).baseFile.exists()
+                if(metadata.getLong("revision") > (state?.cursor ?: 0L) && !dirty && (state != null || (rows.isEmpty() && db.ledger().budgetSnapshot(owner(result)).isEmpty()))) {
                     val snapshot = fetch("backup/download/")
                     store.restore(snapshot.getJSONObject("payload"), snapshot.getLong("revision"))
                     lastBackup.value = info(snapshot)

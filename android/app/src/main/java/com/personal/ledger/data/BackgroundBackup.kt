@@ -112,10 +112,11 @@ class BackupUploadWorker(context: Context, parameters: WorkerParameters): Corout
                 val owner = account.getJSONObject("user").getString("id")
                 val client = ComputerPair.client(account)
                 // Check the live service, not a saved QR or previously installed version.
-                BackupCompatibility.requireSupported(client.call("health/"))
+                val health = client.call("health/")
                 val db = LedgerDatabases.acquire(applicationContext,expected)
                 try {
                     val store = BackupStore(db,owner)
+                    BackupCompatibility.requireSupported(health, if(db.ledger().budgetSnapshot(owner).isEmpty()) 2 else 3)
                     val file = AtomicFile(File(applicationContext.noBackupFilesDir,"$expected.pending.json"))
                     val pending = if(file.baseFile.exists()) JSONObject(String(file.readFully(),Charsets.UTF_8)) else store.prepare().also {
                         val stream = file.startWrite()
@@ -123,6 +124,7 @@ class BackupUploadWorker(context: Context, parameters: WorkerParameters): Corout
                         catch(e: Exception) { file.failWrite(stream);throw e }
                     }
                     if(!BackgroundBackup.active(applicationContext,namespace) || isStopped) return@withLock
+                    BackupCompatibility.requireSupported(health,pending.getJSONObject("payload").getInt("format_version").coerceAtLeast(2))
                     val body = JSONObject(pending.toString()).apply { remove("pending_ids") }
                     val response = try { client.call("backup/",body,account.getString("access_token")) }
                     catch(e: BackupApiException) {

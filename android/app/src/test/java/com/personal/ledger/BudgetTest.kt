@@ -63,4 +63,20 @@ class BudgetTest {
         assertEquals(1234L,BudgetRules.usage(p,rows,listOf(c)).first().spent)
         assertEquals(1234L,BudgetRules.usage(p,rows,listOf(c))[1].spent)
     }
+    @Test fun budgetBackupRoundTripAndInvalidRestoreRetainsOriginal() = runBlocking {
+        val c=category(); val repo=BudgetRepository(db,"a"); val p=plan(c); repo.save(p)
+        val payload=BackupStore(db,"a").export()
+        assertEquals(3,payload.getInt("format_version"))
+        val other=Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(),LedgerDatabase::class.java).build()
+        try {
+            BackupStore(other,"b").restore(payload,1)
+            assertEquals(listOf(p.copy(owner="b")),other.ledger().budgetSnapshot("b"))
+            val invalid=org.json.JSONObject(payload.toString())
+            invalid.getJSONArray("budgets").getJSONObject(0).put("total_fen",1)
+            assertTrue(runCatching { BackupStore(other,"b").restore(invalid,2) }.isFailure)
+            assertEquals(listOf(p.copy(owner="b")),other.ledger().budgetSnapshot("b"))
+            assertEquals(1L,other.ledger().backupState("b")!!.cursor)
+        } finally { other.close() }
+    }
+
 }

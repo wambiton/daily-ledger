@@ -24,8 +24,13 @@ def identifier(value):
 
 
 def validate(payload):
-    if not isinstance(payload, dict) or type(payload.get('format_version')) is not int or payload.get('format_version') not in (1, 2) or set(payload) not in ({'format_version', 'categories', 'entries'}, {'format_version', 'categories', 'entries', 'import_sources'}):
+    if not isinstance(payload, dict) or type(payload.get('format_version')) is not int or payload['format_version'] not in (1, 2, 3):
         raise ValueError('invalid snapshot')
+    fields = {'format_version', 'categories', 'entries'}
+    if payload['format_version'] == 3:
+        fields.add('budgets')
+    if set(payload) not in (fields, fields | {'import_sources'}):
+        raise ValueError('invalid snapshot fields')
     sources = payload.get('import_sources', [])
     if not isinstance(sources, list) or len(sources) > 50000:
         raise ValueError('invalid import sources')
@@ -51,7 +56,7 @@ def validate(payload):
     today = timezone.now().astimezone(ZoneInfo('Asia/Shanghai')).date()
     for item in entries:
         fields = {'id', 'type', 'category_id', 'amount_fen', 'date', 'note', 'created_at', 'updated_at'}
-        if payload['format_version'] == 2:
+        if payload['format_version'] >= 2:
             fields.add('deleted_at')
         if not isinstance(item, dict) or set(item) != fields:
             raise ValueError('invalid entry')
@@ -70,6 +75,8 @@ def validate(payload):
         integer(item['updated_at'], item['created_at'])
         if item.get('deleted_at') is not None:
             integer(item['deleted_at'], item['created_at'], item['updated_at'])
+    if payload['format_version'] == 3:
+        validate_budgets(payload['budgets'], by_id)
     return payload
 
 
@@ -119,3 +126,41 @@ def download(request, data):
     if snapshot is None:
         raise ApiError('这个账号还没有电脑备份', 404, 'no_backup')
     return {**info(snapshot), 'payload': snapshot.payload}
+
+
+def validate_budgets(plans, categories):
+    import re
+    def month(value):
+        if not isinstance(value, str) or not re.fullmatch(r'[0-9]{4}-[0-9]{2}', value):
+            raise ValueError('invalid budget month')
+        year, mon = map(int, value.split('-'))
+        if not 1900 <= year <= 9999 or not 1 <= mon <= 12:
+            raise ValueError('invalid budget month')
+        return year * 12 + mon
+    if not isinstance(plans, list) or len(plans) > 1000:
+        raise ValueError('invalid budgets')
+    ids, ranges = set(), []
+    for p in plans:
+        if not isinstance(p, dict) or set(p) != {'id', 'name', 'start_month', 'end_month', 'total_fen', 'allocations', 'renewal_dismissed'}:
+            raise ValueError('invalid budget fields')
+        pid = identifier(p['id'])
+        if pid in ids or not isinstance(p['name'], str) or not p['name'].strip() or len(p['name']) > 40 or type(p['renewal_dismissed']) is not bool:
+            raise ValueError('invalid budget')
+        ids.add(pid)
+        start, end = month(p['start_month']), month(p['end_month'])
+        if not 0 <= end-start <= 119 or any(a <= end and b >= start for a,b in ranges):
+            raise ValueError('overlapping budget months')
+        ranges.append((start,end))
+        total = integer(p['total_fen'],1,99999999999)
+        if not isinstance(p['allocations'], dict):
+            raise ValueError('invalid allocations')
+        allocated = 0
+        for m, values in p['allocations'].items():
+            if not start <= month(m) <= end or not isinstance(values, dict):
+                raise ValueError('invalid allocation month')
+            for cid, amount in values.items():
+                if cid not in categories or categories[cid]['type'] != 'expense':
+                    raise ValueError('invalid allocation category')
+                allocated += integer(amount,1,99999999999)
+        if allocated > total:
+            raise ValueError('allocations exceed budget')

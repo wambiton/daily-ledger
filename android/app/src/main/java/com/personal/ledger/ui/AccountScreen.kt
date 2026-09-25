@@ -26,7 +26,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import org.json.JSONObject
 
 @Composable
-fun LedgerHost() {
+fun LedgerHost(autoOpenRequest: Long = 0) {
     val backup: BackupViewModel = viewModel()
     val account by backup.account.collectAsStateWithLifecycle()
     val selectedBook by backup.selectedBook.collectAsStateWithLifecycle()
@@ -39,7 +39,7 @@ fun LedgerHost() {
             @Suppress("UNCHECKED_CAST")
             override fun <T: ViewModel> create(modelClass: Class<T>): T = LedgerViewModel(app, name, owner) as T
         })
-        LedgerApp(ledger, externalBusy = networkBusy, accountContent = { AccountScreen(backup) })
+        LedgerApp(ledger, autoOpenRequest=autoOpenRequest, externalBusy = networkBusy, accountContent = { AccountScreen(backup) })
     }
 }
 

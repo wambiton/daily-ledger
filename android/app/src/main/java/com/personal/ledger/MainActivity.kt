@@ -11,10 +11,16 @@ import com.personal.ledger.ui.LedgerTheme
 import com.personal.ledger.ui.LedgerHost
 
 class MainActivity : ComponentActivity() {
+    private val autoRequest=androidx.compose.runtime.mutableLongStateOf(0)
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if(intent.action=="com.personal.ledger.AUTO_ENTRY") autoRequest.longValue=System.nanoTime()
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if(intent.action=="com.personal.ledger.AUTO_ENTRY") autoRequest.longValue=System.nanoTime()
         setContent { LedgerTheme {
-            LedgerHost()
+            LedgerHost(autoRequest.longValue)
         } }
     }
 }

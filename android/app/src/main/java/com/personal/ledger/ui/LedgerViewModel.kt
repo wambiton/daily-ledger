@@ -17,7 +17,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.json.JSONArray
 
-class LedgerViewModel @JvmOverloads constructor(application: Application, private val databaseName: String = "ledger.db", val owner: String = "local-preview") : AndroidViewModel(application) {
+class LedgerViewModel @JvmOverloads constructor(application: Application, val databaseName: String = "ledger.db", val owner: String = "local-preview") : AndroidViewModel(application) {
     private val db = LedgerDatabases.acquire(application, databaseName)
     private val repo = LedgerRepository(db, owner)
     val pending = repo.pendingCount.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)

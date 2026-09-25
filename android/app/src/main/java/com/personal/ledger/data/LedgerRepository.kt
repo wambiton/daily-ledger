@@ -34,12 +34,12 @@ class LedgerRepository(private val db: LedgerDatabase, val owner: String) {
     suspend fun seedDefaults() = db.withTransaction {
         val names = mapOf(
             "expense" to listOf("餐饮", "电子物品", "交通", "日用品", "学习", "娱乐", "其他支出"),
-            "income" to listOf("生活费", "工资", "兼职", "红包", "其他收入"),
+            "income" to listOf("生活费", "工资", "兼职", "红包", "其他收入", "退款"),
         )
         names.forEach { (type, values) -> values.forEachIndexed { index, name ->
             val key = "$type-$index"
             val id = UUID.nameUUIDFromBytes("$owner/default/$key".toByteArray(Charsets.UTF_8)).toString()
-            val category = Category(id, owner, type, name, key)
+            val category = Category(id, owner, type, name, if(type == "income" && index == 5) null else key)
             if (dao.seed(category) != -1L) queueCategory(category)
         } }
     }

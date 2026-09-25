@@ -32,6 +32,8 @@ class AutoEntryTest {
         assertNull(notice(text="支付成功，金额已隐藏").amountFen)
         assertTrue(notice(text="充值成功，20元").excluded)
         assertEquals("income",notice(text="退款到账，18元").type)
+        val refundText="退款到账，3元\n交易单号：1234567890123456"
+        assertNotEquals(notice("partial-one",refundText).id,notice("partial-two",refundText).id)
     }
     @Test fun mappingThenAutomaticEntryAndRepeatedNotificationStayIdempotent() = runBlocking {
         val repo=LedgerRepository(ledger,"a");repo.seedDefaults()
@@ -57,7 +59,7 @@ class AutoEntryTest {
         processor.confirm(p,ledger,cat.id,"expense","18.50",n.date,n.note,false,old.id)
         assertNotNull(ledger.ledger().entry(old.id)!!.deletedAt)
         assertEquals(1,ledger.ledger().entrySnapshot("a").size)
-        repo.addCategory("income","退款")
+        assertTrue(ledger.ledger().categorySnapshot("a").any{it.type=="income" && it.name=="退款"})
         val refund=notice("refund","退款到账，3.00元")
         assertEquals("booked",processor.receive(refund,target(refund),ledger)!!.status)
         val rows=ledger.ledger().entrySnapshot("a")

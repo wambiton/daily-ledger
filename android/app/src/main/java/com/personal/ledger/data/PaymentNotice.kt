@@ -28,7 +28,8 @@ object PaymentNoticeParser {
         val type=when {refund -> "income"; expense && !income -> "expense"; income && !expense -> "income"; else -> null}
         val merchant=Regex("(?:收款方|付款方|商户名称|商户|交易对方)[:：]\\s*([^\\n；;]+)").find(text)?.groupValues?.get(1)?.trim()?.take(80).orEmpty()
         val day=Instant.ofEpochMilli(posted).atZone(Rules.zone).toLocalDate().toString()
-        val order=Regex("(?:交易单号|交易号)[:：]\\s*([0-9]{16,64})(?![0-9])").find(text)?.groupValues?.get(1)
+        val orderFields=if(refund) "退款单号|退款订单号" else "交易单号|交易号"
+        val order=Regex("(?:$orderFields)[:：]\\s*([0-9]{16,64})(?![0-9])").find(text)?.groupValues?.get(1)
         val identity=if(order!=null) "$pkg|$order|$refund" else "$pkg|$key|$posted"
         val id=UUID.nameUUIDFromBytes(identity.toByteArray(Charsets.UTF_8)).toString()
         return PaymentNotice(id,platform,day,amount,type,merchant,("$platform · $title\n$text").take(500),refund,excluded,

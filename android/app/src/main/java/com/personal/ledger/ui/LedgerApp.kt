@@ -29,7 +29,7 @@ import java.time.YearMonth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, accountContent: (@Composable () -> Unit)? = null) {
+fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, externalBusy: Boolean = false, accountContent: (@Composable () -> Unit)? = null) {
     val categories by vm.categories.collectAsStateWithLifecycle()
     val entries by vm.entries.collectAsStateWithLifecycle()
     val ready by vm.ready.collectAsStateWithLifecycle()
@@ -56,6 +56,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
     var categoryName by rememberSaveable { mutableStateOf("") }
     var categoryError by rememberSaveable { mutableStateOf<String?>(null) }
     val context = LocalContext.current
+    LaunchedEffect(autoOpenRequest) { if(autoOpenRequest != 0L) route="automatic" }
     val snackbar = remember { SnackbarHostState() }
     val today = Rules.today()
     val byId = remember(categories) { categories.associateBy { it.id } }
@@ -93,7 +94,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(
-            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "budget" -> "预算计划"; "search" -> "搜索与筛选"; "trash" -> "回收站"; "files" -> "文件导入导出"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
+            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "automatic" -> "自动记账"; "budget" -> "预算计划"; "search" -> "搜索与筛选"; "trash" -> "回收站"; "files" -> "文件导入导出"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
             navigationIcon = { if(route != "home") TextButton(onClick = { leave() }, enabled = !busy) { Text("返回") } },
             actions = { if(route == "home" && tab == 0) Text("本地保存", modifier = Modifier.padding(end = 20.dp), style = MaterialTheme.typography.labelMedium) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -106,7 +107,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
         floatingActionButton = { if(route == "home" && tab == 0 && ready) ExtendedFloatingActionButton(
             onClick = { beginNew(today.toString()) }, modifier = Modifier.testTag("new-entry")) { Text("＋ 记一笔") } },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().imePadding().then(if(route == "search" || route == "budget") Modifier else Modifier.verticalScroll(rememberScrollState())).padding(horizontal = 20.dp),
+        Column(Modifier.padding(padding).fillMaxSize().imePadding().then(if(route == "search" || route == "budget" || route == "automatic") Modifier else Modifier.verticalScroll(rememberScrollState())).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (!ready) {
                 Text("正在打开账本…")
@@ -136,6 +137,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
                         ComparisonScreen(entries, categories) { detailFromSearch = false; detailId = it.id; route = "detail" }
                     }
                 } else {
+                    OutlinedButton(onClick={route="automatic"},modifier=Modifier.fillMaxWidth().testTag("open-automatic")) {Text("自动记账（通知验证版）")}
                     BackupStatusCard(vm)
                     if(accountContent != null) {
                         accountContent()
@@ -153,6 +155,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), externalBusy: Boolean = false, 
                 "search" -> screenState.SaveableStateProvider("search") {
                     SearchScreen(entries, categories, vm.owner) { detailFromSearch = true; detailId = it.id; route = "detail" }
                 }
+                "automatic" -> AutoEntryScreen(vm)
                 "budget" -> BudgetScreen(vm,busy)
                 "trash" -> TrashScreen(vm, byId, busy)
                 "files" -> FileToolsScreen(vm,busy)

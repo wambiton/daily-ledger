@@ -22,11 +22,11 @@ class RepositoryTest {
         try {
             val a = LedgerRepository(db, "a")
             a.seedDefaults(); a.seedDefaults()
-            assertEquals(12, a.categories.first().size)
-            assertEquals(12, db.ledger().pending("a").size)
+            assertEquals(13, a.categories.first().size)
+            assertEquals(13, db.ledger().pending("a").size)
             val b = LedgerRepository(db, "b")
             b.seedDefaults()
-            assertEquals(12, b.categories.first().size)
+            assertEquals(13, b.categories.first().size)
             assertTrue(a.categories.first().map { it.id }.intersect(b.categories.first().map { it.id }.toSet()).isEmpty())
         } finally { db.close() }
     }

@@ -17,11 +17,13 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
         val categories=ledger.ledger().categorySnapshot(candidate.owner)
         val category=if(notice.refund) categories.firstOrNull{it.type=="income" && it.name=="退款"}
             else if(notice.merchant.isNotEmpty() && notice.type!=null) inbox.auto().mapping(candidate.databaseName,candidate.owner,notice.platform,notice.merchant,notice.type)?.let {mapping -> categories.firstOrNull{it.id==mapping.categoryId && it.type==notice.type} } else null
+        ledger.withTransaction {
         val duplicate=matches(candidate,ledger)
         if(duplicate.isNotEmpty()) candidate=candidate.copy(reason="疑似重复：当前账本已有同日期、金额和收支类型的账目")
         else if(category!=null && !notice.uncertain) {
             val entry=write(candidate,ledger,category.id,notice.type!!,notice.amountFen!!,notice.date,notice.note,null)
             candidate=candidate.copy(status="booked",entryId=entry.id,reason="已自动记账，可在指定账本查看或修改")
+        }
         }
         inbox.auto().update(candidate)
         candidate

@@ -10,6 +10,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -73,8 +75,9 @@ fun AccountScreen(vm: BackupViewModel) {
     var mode by rememberSaveable { mutableStateOf("login") }
     var chooseImport by remember { mutableStateOf(false) }
     var showBooks by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("账号与电脑备份", style = MaterialTheme.typography.titleLarge)
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionBanner(account?.getJSONObject("user")?.getString("email") ?: "我的本机账本", "认真记下生活，安心保存每一笔", "person")
+        Text("账号与电脑备份", style = MaterialTheme.typography.titleMedium)
         if(uploading) Text("备份任务进行中：电脑未连接时继续在后台等候。以成功提示为准。")
         if(waiting) Text("等待电脑连接，手机账目仍然保留。")
         Text("当前账本：${selected?.optString("label") ?: account?.getJSONObject("user")?.getString("email") ?: "原本机账本"}",modifier=Modifier.testTag("current-phone-book"))

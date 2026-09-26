@@ -36,7 +36,7 @@ import com.personal.ledger.domain.Rules
 import java.time.LocalDate
 import java.time.YearMonth
 
-@Composable private fun Character(chibi: Boolean, modifier: Modifier) {
+@Composable internal fun Character(chibi: Boolean, modifier: Modifier) {
     Image(painterResource(R.drawable.winter_characters),null,modifier,
         alignment=BiasAlignment(if(chibi) 1f else -1f,0f),contentScale=ContentScale.Crop)
 }
@@ -164,7 +164,7 @@ import java.time.YearMonth
     }
 }
 
-private val MoneyFont=FontFamily(android.graphics.Typeface.create("sans-serif-condensed",android.graphics.Typeface.BOLD))
+internal val MoneyFont=FontFamily(android.graphics.Typeface.create("sans-serif-condensed",android.graphics.Typeface.BOLD))
 private fun displayMoney(fen: Long): String = DecimalFormat("#,##0.00",DecimalFormatSymbols(Locale.CHINA)).format(BigDecimal.valueOf(fen,2))
 fun budgetPercent(spent: Long, limit: Long): String = if(limit<=0) "—" else BigDecimal.valueOf(spent).multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(limit),0,RoundingMode.HALF_UP).toPlainString()+"%"
 @Composable private fun Amount(fen: Long, modifier: Modifier=Modifier, large: Boolean=false) {

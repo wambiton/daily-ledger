@@ -146,7 +146,8 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                     SearchScreen(entries, categories, vm.owner) { detailFromSearch = true; detailId = it.id; route = "detail" }
                 }
                 "calendar" -> {
-                    CalendarCard(YearMonth.parse(monthText), LocalDate.parse(selectedDate), entries.map { it.date }.toSet(),
+                    SectionBanner("每一天，都值得记录", "选择日期，回看当天的收支", "calendar")
+                    CalendarCard(YearMonth.parse(monthText), LocalDate.parse(selectedDate), entries.filter { it.deletedAt == null },
                         onMonth = { monthText = it.toString() },
                         onJump = { chooseDate(selectedDate) { selectedDate = it.toString(); monthText = YearMonth.from(it).toString() } },
                         onDate = { selectedDate = it.toString() })
@@ -155,7 +156,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                         entries.filter {it.date==selectedDate},byId,
                         onEntry={detailFromSearch=false;detailFromCalendar=true;detailId=it.id;route="detail"},reveal=true)
                     OutlinedButton(onClick={beginNew(selectedDate)},modifier=Modifier.fillMaxWidth()) {Text("补记这一天")}
-                    Spacer(Modifier.height(40.dp))
+                    Spacer(Modifier.height(48.dp))
                 }
                 "appearance" -> AppearanceScreen()
                 "automatic" -> AutoEntryScreen(vm)
@@ -274,13 +275,24 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
     }
 }
 
-@Composable private fun CalendarCard(month: YearMonth, selected: LocalDate, recorded: Set<String>, onMonth: (YearMonth) -> Unit, onJump: () -> Unit, onDate: (LocalDate) -> Unit) {
+@Composable private fun CalendarCard(month: YearMonth, selected: LocalDate, entries: List<Entry>, onMonth: (YearMonth) -> Unit, onJump: () -> Unit, onDate: (LocalDate) -> Unit) {
     val today = Rules.today()
-    LedgerCard {
+    val monthly = entries.filter { it.date.startsWith(month.toString()) }
+    val dailyExpense = monthly.filter { it.type == "expense" }.groupBy { it.date }.mapValues { (_, rows) -> rows.sumOf { it.amountFen } }
+    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
+      Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = { onMonth(month.minusMonths(1)) }, modifier = Modifier.testTag("previous-month")) { Text("‹") }
             TextButton(onClick = onJump) { Text("${month.year}年${month.monthValue}月") }
             TextButton(onClick = { onMonth(month.plusMonths(1)) }, enabled = month < YearMonth.from(today)) { Text("›") }
+        }
+        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+            listOf("income" to "月收入", "expense" to "月支出").forEach { (kind, label) ->
+                Column {
+                    Text(label, style = MaterialTheme.typography.labelSmall)
+                    Text("¥${Rules.money(monthly.filter { it.type == kind }.sumOf { it.amountFen })}", fontFamily = MoneyFont, style = MaterialTheme.typography.titleLarge)
+                }
+            }
         }
         Row { listOf("一", "二", "三", "四", "五", "六", "日").forEach { Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Text(it, style = MaterialTheme.typography.labelSmall) } } }
         val offset = month.atDay(1).dayOfWeek.value - 1
@@ -288,18 +300,19 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
         repeat(rows) { row -> Row {
             repeat(7) { col ->
                 val day = row * 7 + col - offset + 1
-                if(day !in 1..month.lengthOfMonth()) Spacer(Modifier.weight(1f).height(40.dp)) else {
+                if(day !in 1..month.lengthOfMonth()) Spacer(Modifier.weight(1f).height(48.dp)) else {
                     val value = month.atDay(day)
                     val isSelected = value == selected
                     val shape = RoundedCornerShape(10.dp)
                     val decoration = if(isSelected) Modifier.background(MaterialTheme.colorScheme.primary, shape) else if(value == today) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, shape) else Modifier
-                    Column(Modifier.weight(1f).height(40.dp).then(decoration).testTag("date-$value").clickable(enabled = value <= today) { onDate(value) },
+                    Column(Modifier.weight(1f).height(48.dp).then(decoration).testTag("date-$value").clickable(enabled = value <= today) { onDate(value) },
                         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                         Text(day.toString(), color = if(isSelected) MaterialTheme.colorScheme.onPrimary else if(value > today) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodySmall)
-                        if(value.toString() in recorded) Text("•", style = MaterialTheme.typography.labelSmall, color = if(isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
+                        if(value.toString() in dailyExpense) Text(Rules.money(dailyExpense.getValue(value.toString())), maxLines = 1, style = MaterialTheme.typography.labelSmall, color = if(isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
                     }
                 }
             }
         } }
+      }
     }
 }

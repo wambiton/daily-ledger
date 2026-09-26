@@ -46,6 +46,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
     var date by rememberSaveable { mutableStateOf(Rules.today().toString()) }
     var note by rememberSaveable { mutableStateOf("") }
     var entryId by rememberSaveable { mutableStateOf<String?>(null) }
+    var detailFromCalendar by rememberSaveable { mutableStateOf(false) }
     var detailFromSearch by rememberSaveable { mutableStateOf(false) }
     var detailId by rememberSaveable { mutableStateOf<String?>(null) }
     var dirty by rememberSaveable { mutableStateOf(false) }
@@ -55,7 +56,6 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
     var newCategory by rememberSaveable { mutableStateOf(false) }
     var categoryName by rememberSaveable { mutableStateOf("") }
     var categoryError by rememberSaveable { mutableStateOf<String?>(null) }
-    val winter = LocalAppearance.current.selected == LedgerAppearance.WINTER
     val context = LocalContext.current
     LaunchedEffect(autoOpenRequest) { if(autoOpenRequest != 0L) route="automatic" }
     val snackbar = remember { SnackbarHostState() }
@@ -81,6 +81,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
             (route == "form" || route == "choose") && dirty -> discard = true
             route == "form" && entryId != null -> route = "detail"
             route == "detail" && detailFromSearch -> route = "search"
+            route == "detail" && detailFromCalendar -> route = "calendar"
             route == "budget" && vm.budgetDraft.value != null -> vm.cancelBudget()
             else -> route = "home"
         }
@@ -94,49 +95,35 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
-        topBar = { TopAppBar(
-            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "appearance" -> "外观与主题"; "automatic" -> "自动记账"; "budget" -> "预算计划"; "search" -> "搜索与筛选"; "trash" -> "回收站"; "files" -> "文件导入导出"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
+        topBar = { if(route != "home" || tab != 0) TopAppBar(
+            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "calendar" -> "日历账目"; "appearance" -> "外观与主题"; "automatic" -> "自动记账"; "budget" -> "预算计划"; "search" -> "搜索与筛选"; "trash" -> "回收站"; "files" -> "文件导入导出"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
             navigationIcon = { if(route != "home") TextButton(onClick = { leave() }, enabled = !busy) { Text("返回") } },
             actions = { if(route == "home" && tab == 0) Text("本地保存", modifier = Modifier.padding(end = 20.dp), style = MaterialTheme.typography.labelMedium) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
         ) },
         bottomBar = { if(route == "home") NavigationBar {
-            NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Text("▤") }, label = { Text("账本") })
-            NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Text("▥") }, label = { Text("比较") })
-            NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Text("○") }, label = { Text("我的") })
+            NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { LedgerGlyph("book") }, label = { Text("账本") })
+            NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { LedgerGlyph("bars") }, label = { Text("比较") })
+            NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { LedgerGlyph("person") }, label = { Text("我的") })
         } },
         floatingActionButton = { if(route == "home" && tab == 0 && ready) ExtendedFloatingActionButton(
             onClick = { beginNew(today.toString()) }, modifier = Modifier.testTag("new-entry")) { Text("＋ 记一笔") } },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().imePadding().then(if(route == "search" || route == "budget" || route == "automatic") Modifier else Modifier.verticalScroll(rememberScrollState())).padding(horizontal = 20.dp),
+        Column(Modifier.padding(padding).fillMaxSize().imePadding().then(if(route == "search" || route == "budget" || route == "automatic" || (route == "home" && tab == 0)) Modifier else Modifier.verticalScroll(rememberScrollState())).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (!ready) {
                 Text("正在打开账本…")
                 if(!busy) Button(onClick = { vm.initialize() }) { Text("重试") }
             } else when(route) {
                 "home" -> if(tab == 0) {
-                    if(winter) WinterHome(vm.owner, entries, categories, vm) { route="budget" }
-                    OutlinedButton(onClick = { route = "search" }, modifier = Modifier.fillMaxWidth().testTag("open-search")) { Text("搜索与筛选") }
-                    OutlinedButton(onClick = { route = "budget" }, modifier = Modifier.fillMaxWidth().testTag("open-budget")) { Text("预算计划与提醒") }
                     val budgetAlerts by vm.budgetNotices.collectAsStateWithLifecycle()
                     val budgetPlans by vm.budgets.collectAsStateWithLifecycle()
-                    if(budgetPlans.any {it.endMonth < YearMonth.from(today).toString() && !it.renewalDismissed}) Text("预算计划已到期，请进入预算页面安排下一期")
-                    if(budgetAlerts.isNotEmpty()) Text("${budgetAlerts.size}项预算达到提醒阈值，点击预算计划查看", color=MaterialTheme.colorScheme.error)
-                    DayCard("今天 · ${today.monthValue}月${today.dayOfMonth}日", entries.filter { it.date == today.toString() }, byId,
-                        onEntry = { detailFromSearch = false; detailId = it.id; route = "detail" }, compact = true, reveal = !winter && selectedDate == today.toString())
-                    CalendarCard(YearMonth.parse(monthText), LocalDate.parse(selectedDate), entries.map { it.date }.toSet(),
-                        onMonth = { monthText = it.toString() },
-                        onJump = { chooseDate(selectedDate) { selectedDate = it.toString(); monthText = YearMonth.from(it).toString() } },
-                        onDate = { selectedDate = it.toString() })
-                    TextButton(onClick = { selectedDate = today.toString(); monthText = YearMonth.from(today).toString() }) { Text("回到今天") }
-                    if(selectedDate != today.toString()) {
-                        DayCard(selectedDate, entries.filter { it.date == selectedDate }, byId, onEntry = { detailFromSearch = false; detailId = it.id; route = "detail" }, reveal = true)
-                        OutlinedButton(onClick = { beginNew(selectedDate) }, modifier = Modifier.fillMaxWidth()) { Text("补记这一天") }
-                    }
-                    Spacer(Modifier.height(90.dp))
+                    HomeDashboard(vm.owner, entries, categories, budgetPlans, budgetAlerts.size,
+                        onBudget={route="budget"}, onCalendar={route="calendar"}, onSearch={route="search"},
+                        onEntry={detailFromSearch=false;detailFromCalendar=false;detailId=it.id;route="detail"})
                 } else if(tab == 1) {
                     screenState.SaveableStateProvider("comparison") {
-                        ComparisonScreen(entries, categories) { detailFromSearch = false; detailId = it.id; route = "detail" }
+                        ComparisonScreen(entries, categories) { detailFromCalendar=false; detailFromSearch = false; detailId = it.id; route = "detail" }
                     }
                 } else {
                     OutlinedButton(onClick={route="appearance"},modifier=Modifier.fillMaxWidth().testTag("open-appearance")) {Text("外观与主题")}
@@ -157,6 +144,18 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                 }
                 "search" -> screenState.SaveableStateProvider("search") {
                     SearchScreen(entries, categories, vm.owner) { detailFromSearch = true; detailId = it.id; route = "detail" }
+                }
+                "calendar" -> {
+                    CalendarCard(YearMonth.parse(monthText), LocalDate.parse(selectedDate), entries.map { it.date }.toSet(),
+                        onMonth = { monthText = it.toString() },
+                        onJump = { chooseDate(selectedDate) { selectedDate = it.toString(); monthText = YearMonth.from(it).toString() } },
+                        onDate = { selectedDate = it.toString() })
+                    TextButton(onClick = { selectedDate = today.toString(); monthText = YearMonth.from(today).toString() }) { Text("回到今天") }
+                    DayCard(if(selectedDate==today.toString()) "今天 · ${today.monthValue}月${today.dayOfMonth}日" else selectedDate,
+                        entries.filter {it.date==selectedDate},byId,
+                        onEntry={detailFromSearch=false;detailFromCalendar=true;detailId=it.id;route="detail"},reveal=true)
+                    OutlinedButton(onClick={beginNew(selectedDate)},modifier=Modifier.fillMaxWidth()) {Text("补记这一天")}
+                    Spacer(Modifier.height(40.dp))
                 }
                 "appearance" -> AppearanceScreen()
                 "automatic" -> AutoEntryScreen(vm)
@@ -188,7 +187,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                     OutlinedTextField(note, { note = it; dirty = true }, label = { Text("备注（选填）") }, placeholder = { Text("例如：午餐，支付宝支付") },
                         enabled = !busy, minLines = 2, modifier = Modifier.fillMaxWidth().testTag("note"))
                     Button(onClick = { vm.save(entryId, type, categoryId, amount, date, note) {
-                        selectedDate = date; monthText = YearMonth.from(LocalDate.parse(date)).toString(); route = "home"; tab = 0; dirty = false
+                        selectedDate = date; monthText = YearMonth.from(LocalDate.parse(date)).toString(); route = if(date==today.toString()) "home" else "calendar"; tab = 0; dirty = false
                     } }, enabled = !busy && categoryId.isNotEmpty() && amount.isNotBlank(), modifier = Modifier.fillMaxWidth().testTag("save-entry")) { Text(if(busy) "正在保存…" else "保存账目") }
                 }
                 "detail" -> {

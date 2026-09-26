@@ -27,7 +27,7 @@ class LedgerFlowTest {
         ui.waitUntil(10000) { vm.ready.value }
         ui.waitForIdle()
     }
-    @After fun cleanup() { store.clear(); app.deleteDatabase(dbName) }
+    @After fun cleanup() { store.clear() }
 
     @Test fun expenseCreateEditAndDelete() {
         ui.onNodeWithTag("new-entry").performClick()
@@ -37,13 +37,15 @@ class LedgerFlowTest {
         ui.onNodeWithTag("note").performTextInput("expense-test")
         ui.onNodeWithTag("save-entry").performScrollTo().performClick()
         ui.waitUntil(10000) { vm.entries.value.any { it.note == "expense-test" } }
-        ui.onNodeWithText("expense-test").performScrollTo().performClick()
+        ui.onNodeWithTag("home-dashboard").performScrollToNode(hasText("expense-test"))
+        ui.onNodeWithText("expense-test").performClick()
         ui.onNodeWithText("−¥18.50").assertIsDisplayed()
         ui.onNodeWithText("编辑").performClick()
         ui.onNodeWithTag("amount").performTextReplacement("20")
         ui.onNodeWithTag("save-entry").performScrollTo().performClick()
         ui.waitUntil(10000) { vm.entries.value.any { it.amountFen == 2000L } }
-        ui.onNodeWithText("expense-test").performScrollTo().performClick()
+        ui.onNodeWithTag("home-dashboard").performScrollToNode(hasText("expense-test"))
+        ui.onNodeWithText("expense-test").performClick()
         ui.onNodeWithText("删除这笔账目").performClick()
         ui.onNodeWithText("删除", useUnmergedTree = true).performClick()
         ui.waitUntil(10000) { vm.entries.value.isEmpty() }
@@ -56,6 +58,8 @@ class LedgerFlowTest {
     }
 
     @Test fun backdateIncomeWithCustomCategoryAndEmptyNote() {
+        ui.onNodeWithTag("home-dashboard").performScrollToNode(hasTestTag("open-calendar"))
+        ui.onNodeWithTag("open-calendar").performClick()
         val yesterday = Rules.today().minusDays(1)
         if(YearMonth.from(yesterday) != YearMonth.from(Rules.today())) ui.onNodeWithTag("previous-month").performScrollTo().performClick()
         ui.onNodeWithTag("date-$yesterday").performScrollTo().performClick()
@@ -125,6 +129,8 @@ class LedgerFlowTest {
                 "23.45", past.toString(), "history-visible-test") { }
         }
         ui.waitUntil(10000) { vm.entries.value.any { it.note == "history-visible-test" } }
+        ui.onNodeWithTag("home-dashboard").performScrollToNode(hasTestTag("open-calendar"))
+        ui.onNodeWithTag("open-calendar").performClick()
         ui.onNodeWithTag("previous-month").performScrollTo().performClick()
         ui.onNodeWithTag("date-$past").performScrollTo().performClick()
         ui.waitForIdle()

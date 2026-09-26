@@ -26,7 +26,8 @@ class BudgetFlowTest {
     }
     @After fun close() {store.clear()}
     @Test fun createBudgetThroughEditorThenShowThresholdAndRearm() {
-        ui.onNodeWithTag("open-budget").performScrollTo().performClick()
+        ui.onNodeWithTag("home-dashboard").performScrollToNode(hasTestTag("open-budget"))
+        ui.onNodeWithTag("open-budget").performClick()
         ui.onNodeWithTag("new-budget").performClick()
         ui.onNodeWithTag("budget-name").performTextInput("本月生活费")
         ui.onNodeWithTag("budget-total").performTextInput("100")
@@ -54,7 +55,8 @@ class BudgetFlowTest {
     }
     @Test fun invalidBudgetAllocationIsRejectedWithoutChangingSavedPlan() {
         val cat=vm.categories.value.first{it.type=="expense"}
-        ui.onNodeWithTag("open-budget").performScrollTo().performClick()
+        ui.onNodeWithTag("home-dashboard").performScrollToNode(hasTestTag("open-budget"))
+        ui.onNodeWithTag("open-budget").performClick()
         ui.onNodeWithTag("new-budget").performClick()
         ui.onNodeWithTag("budget-name").performTextInput("提前计划")
         ui.onNodeWithTag("budget-total").performTextInput("100")
@@ -72,7 +74,8 @@ class BudgetFlowTest {
         Assert.assertEquals(8000L,BudgetRules.allocations(vm.budgets.value.single().allocations).values.single().getValue(cat.id))
     }
     @Test fun shorteningPlanRequiresExplicitRemovalOfOutsideAllocation() {
-        ui.onNodeWithTag("open-budget").performScrollTo().performClick()
+        ui.onNodeWithTag("home-dashboard").performScrollToNode(hasTestTag("open-budget"))
+        ui.onNodeWithTag("open-budget").performClick()
         val cat=vm.categories.value.first{it.type=="expense"}
         val plan=BudgetPlan(UUID.randomUUID().toString(),vm.owner,"未来安排","2027-01","2027-02",10000,
             BudgetRules.encode(mapOf("2027-01" to mapOf(cat.id to 5000L),"2027-02" to mapOf(cat.id to 5000L))))

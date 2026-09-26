@@ -55,6 +55,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
     var newCategory by rememberSaveable { mutableStateOf(false) }
     var categoryName by rememberSaveable { mutableStateOf("") }
     var categoryError by rememberSaveable { mutableStateOf<String?>(null) }
+    val winter = LocalAppearance.current.selected == LedgerAppearance.WINTER
     val context = LocalContext.current
     LaunchedEffect(autoOpenRequest) { if(autoOpenRequest != 0L) route="automatic" }
     val snackbar = remember { SnackbarHostState() }
@@ -94,7 +95,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = { TopAppBar(
-            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "automatic" -> "自动记账"; "budget" -> "预算计划"; "search" -> "搜索与筛选"; "trash" -> "回收站"; "files" -> "文件导入导出"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
+            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "appearance" -> "外观与主题"; "automatic" -> "自动记账"; "budget" -> "预算计划"; "search" -> "搜索与筛选"; "trash" -> "回收站"; "files" -> "文件导入导出"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
             navigationIcon = { if(route != "home") TextButton(onClick = { leave() }, enabled = !busy) { Text("返回") } },
             actions = { if(route == "home" && tab == 0) Text("本地保存", modifier = Modifier.padding(end = 20.dp), style = MaterialTheme.typography.labelMedium) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -114,6 +115,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                 if(!busy) Button(onClick = { vm.initialize() }) { Text("重试") }
             } else when(route) {
                 "home" -> if(tab == 0) {
+                    if(winter) WinterHome(vm.owner, entries, categories, vm) { route="budget" }
                     OutlinedButton(onClick = { route = "search" }, modifier = Modifier.fillMaxWidth().testTag("open-search")) { Text("搜索与筛选") }
                     OutlinedButton(onClick = { route = "budget" }, modifier = Modifier.fillMaxWidth().testTag("open-budget")) { Text("预算计划与提醒") }
                     val budgetAlerts by vm.budgetNotices.collectAsStateWithLifecycle()
@@ -121,7 +123,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                     if(budgetPlans.any {it.endMonth < YearMonth.from(today).toString() && !it.renewalDismissed}) Text("预算计划已到期，请进入预算页面安排下一期")
                     if(budgetAlerts.isNotEmpty()) Text("${budgetAlerts.size}项预算达到提醒阈值，点击预算计划查看", color=MaterialTheme.colorScheme.error)
                     DayCard("今天 · ${today.monthValue}月${today.dayOfMonth}日", entries.filter { it.date == today.toString() }, byId,
-                        onEntry = { detailFromSearch = false; detailId = it.id; route = "detail" }, compact = true, reveal = selectedDate == today.toString())
+                        onEntry = { detailFromSearch = false; detailId = it.id; route = "detail" }, compact = true, reveal = !winter && selectedDate == today.toString())
                     CalendarCard(YearMonth.parse(monthText), LocalDate.parse(selectedDate), entries.map { it.date }.toSet(),
                         onMonth = { monthText = it.toString() },
                         onJump = { chooseDate(selectedDate) { selectedDate = it.toString(); monthText = YearMonth.from(it).toString() } },
@@ -137,6 +139,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                         ComparisonScreen(entries, categories) { detailFromSearch = false; detailId = it.id; route = "detail" }
                     }
                 } else {
+                    OutlinedButton(onClick={route="appearance"},modifier=Modifier.fillMaxWidth().testTag("open-appearance")) {Text("外观与主题")}
                     OutlinedButton(onClick={route="automatic"},modifier=Modifier.fillMaxWidth().testTag("open-automatic")) {Text("自动记账（通知验证版）")}
                     BackupStatusCard(vm)
                     if(accountContent != null) {
@@ -155,6 +158,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                 "search" -> screenState.SaveableStateProvider("search") {
                     SearchScreen(entries, categories, vm.owner) { detailFromSearch = true; detailId = it.id; route = "detail" }
                 }
+                "appearance" -> AppearanceScreen()
                 "automatic" -> AutoEntryScreen(vm)
                 "budget" -> BudgetScreen(vm,busy)
                 "trash" -> TrashScreen(vm, byId, busy)

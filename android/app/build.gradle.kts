@@ -11,8 +11,8 @@ android {
         applicationId = "com.personal.ledger"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.7.3-dashboard"
+        versionCode = 15
+        versionName = "0.7.4-winter-polish"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

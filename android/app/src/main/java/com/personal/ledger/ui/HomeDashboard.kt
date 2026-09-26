@@ -17,6 +17,16 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
+import java.math.BigDecimal
+import java.math.RoundingMode
+import java.text.DecimalFormat
+import java.text.DecimalFormatSymbols
+import java.util.Locale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,30 +57,40 @@ import java.time.YearMonth
     }
     val plan=plans.firstOrNull{it.owner==owner&&it.startMonth<=month&&it.endMonth>=month}
     Box(Modifier.fillMaxSize()) {
-    if(winter) Image(painterResource(R.drawable.winter_yukino),null,Modifier.matchParentSize(),alignment=Alignment.CenterStart,contentScale=ContentScale.Crop,alpha=.20f)
-    LazyColumn(Modifier.fillMaxSize().testTag("home-dashboard"),verticalArrangement=Arrangement.spacedBy(0.dp),contentPadding=PaddingValues(top=8.dp,bottom=104.dp)) {
+    if(winter) Image(painterResource(R.drawable.winter_landscape),null,Modifier.matchParentSize(),contentScale=ContentScale.Crop,alpha=.70f)
+    LazyColumn(Modifier.fillMaxSize().testTag("home-dashboard"),verticalArrangement=Arrangement.spacedBy(0.dp),contentPadding=PaddingValues(start=12.dp,end=12.dp,top=8.dp,bottom=104.dp)) {
         item(key="header") {
-            Row(Modifier.fillMaxWidth().padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-                    Text("我的账本",fontSize=30.sp,fontWeight=FontWeight.Bold)
-                    Text(if(winter) "雪乃 · 冬日  ❄" else "记录生活 · 心中有数",color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${today.monthValue}月${today.dayOfMonth}日 · 本地保存",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().padding(vertical=12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                    Text("我的账本",fontSize=28.sp,fontWeight=FontWeight.ExtraBold,fontFamily=if(winter) FontFamily.Serif else FontFamily.Default)
+                    Text(if(winter) "雪乃 · 冬日  ❄" else "记录生活 · 心中有数",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    if(winter) WinterQuote("一如既往，\n认真地对待每一天。")
+                    else Text("${today.monthValue}月${today.dayOfMonth}日 · 本地保存",style=MaterialTheme.typography.labelSmall)
                 }
-                if(winter) Character(false,Modifier.size(92.dp).clip(CircleShape).border(2.dp,Color.White,CircleShape))
-                else Box(Modifier.size(72.dp).background(MaterialTheme.colorScheme.primaryContainer,CircleShape),contentAlignment=Alignment.Center) {
+                if(winter) {
+                    Character(false,Modifier.size(100.dp).clip(CircleShape).border(2.dp,Color.White,CircleShape))
+                    Column(Modifier.width(82.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Text("雪乃 · 冬日",fontFamily=FontFamily.Serif,fontSize=12.sp)
+                        WinterQuote("生活或许平凡，\n但依然值得认真。",small=true)
+                    }
+                } else Box(Modifier.size(72.dp).background(MaterialTheme.colorScheme.primaryContainer,CircleShape),contentAlignment=Alignment.Center) {
                     Text("账",fontSize=28.sp,color=MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
         }
         item(key="summary") {
             DashboardCard(Modifier.testTag("home-summary")) {
-                Text("本月支出",style=MaterialTheme.typography.titleMedium)
-                Text("¥${Rules.money(expense)}",fontSize=34.sp,fontWeight=FontWeight.Bold,modifier=Modifier.testTag("home-expense"))
+                Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {LedgerGlyph("bars",color=Color(0xFF76ACED));Text("本月支出",style=MaterialTheme.typography.titleMedium)}
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    Amount(expense,Modifier.weight(1f).testTag("home-expense"),large=true)
+                    if(winter) Image(painterResource(R.drawable.winter_landscape),null,Modifier.width(84.dp).height(48.dp).clip(RoundedCornerShape(12.dp)),contentScale=ContentScale.Crop,alpha=.45f)
+                }
                 HorizontalDivider(color=MaterialTheme.colorScheme.outlineVariant)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.weight(1f)) {Text("本月收入",style=MaterialTheme.typography.labelMedium);Text("¥${Rules.money(income)}",fontWeight=FontWeight.Bold)}
-                    Column(Modifier.weight(1f)) {Text("本月结余",style=MaterialTheme.typography.labelMedium);Text("${if(income<expense) "−" else ""}¥${Rules.money(kotlin.math.abs(income-expense))}",fontWeight=FontWeight.Bold)}
+                    Column(Modifier.weight(1f)) {Text("本月收入",style=MaterialTheme.typography.labelMedium);Amount(income)}
+                    Column(Modifier.weight(1f)) {Text("本月结余",style=MaterialTheme.typography.labelMedium);Amount(income-expense)}
                 }
+                if(winter) WinterQuote("冬日的每一笔，都是更好的自己。")
             }
         }
         item(key="budget") {
@@ -82,14 +102,23 @@ import java.time.YearMonth
                         else {
                             val usage=BudgetRules.usage(plan,active,categories).first()
                             if(plan.startMonth!=plan.endMonth) Text("${plan.startMonth} 至 ${plan.endMonth}",style=MaterialTheme.typography.labelSmall)
-                            Text("¥${Rules.money(usage.spent)} / ¥${Rules.money(usage.limit)}",fontWeight=FontWeight.Medium)
-                            LinearProgressIndicator(progress={(usage.spent.toFloat()/usage.limit).coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth())
+                            Row(verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                                Amount(usage.spent,Modifier.weight(1f))
+                                Text("/ ¥${displayMoney(usage.limit)}",fontSize=12.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                                LinearProgressIndicator(progress={(usage.spent.toFloat()/usage.limit).coerceIn(0f,1f)},modifier=Modifier.weight(1f).height(10.dp).clip(CircleShape),color=Color(0xFF579AEC),trackColor=Color(0xFFE3EEFA),drawStopIndicator={})
+                                Text(budgetPercent(usage.spent,usage.limit),fontFamily=MoneyFont,fontSize=14.sp,modifier=Modifier.testTag("budget-percent"))
+                            }
                             val rest=usage.limit-usage.spent
                             Text("${if(rest>=0) "剩余" else "超出"} ¥${Rules.money(kotlin.math.abs(rest))}",style=MaterialTheme.typography.bodySmall,
                                 color=if(rest<0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                         }
                     }
-                    if(winter) Character(true,Modifier.width(66.dp).height(84.dp).clip(RoundedCornerShape(16.dp)))
+                    if(winter) Column(Modifier.width(82.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                        WinterQuote("一点一滴，\n让未来更清晰。")
+                        Character(true,Modifier.width(78.dp).height(94.dp))
+                    }
                 }
                 if(alertCount>0) Text("${alertCount}项预算达到提醒阈值",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.error)
                 if(plans.any{it.endMonth<month&&!it.renewalDismissed}) Text("预算计划已到期，点击安排下一期",style=MaterialTheme.typography.labelSmall)
@@ -118,18 +147,34 @@ import java.time.YearMonth
                     Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                         Box(Modifier.size(38.dp).background(tone,CircleShape),contentAlignment=Alignment.Center) {LedgerGlyph(name,color=Color(0xFF243C5A))}
                         Column(Modifier.weight(1f)) {Text(name,fontWeight=FontWeight.Bold);if(entry.note.isNotBlank()) Text(entry.note,style=MaterialTheme.typography.bodySmall,maxLines=1,overflow=TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.onSurfaceVariant)}
-                        Text("${if(entry.type=="expense") "−" else "+"}¥${Rules.money(entry.amountFen)}",fontWeight=FontWeight.Bold)
+                        Text("${if(entry.type=="expense") "−" else "+"}¥${displayMoney(entry.amountFen)}",fontFamily=MoneyFont,fontWeight=FontWeight.Bold,fontSize=17.sp)
                         Text("›",color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
         }
+        if(winter) item(key="closing-quote") {WinterQuote("在有些寒冷的日子里，也好好管理生活吧。")}
     }
     }
 }
 
 @Composable private fun DashboardCard(modifier: Modifier=Modifier, content: @Composable ColumnScope.()->Unit) {
-    Surface(modifier.fillMaxWidth().padding(bottom=10.dp),shape=RoundedCornerShape(20.dp),color=MaterialTheme.colorScheme.surface) {
+    Surface(modifier.fillMaxWidth().padding(bottom=10.dp),shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface.copy(alpha=if(LocalAppearance.current.selected==LedgerAppearance.WINTER) .97f else 1f)) {
         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp),content=content)
     }
+}
+
+private val MoneyFont=FontFamily(android.graphics.Typeface.create("sans-serif-condensed",android.graphics.Typeface.BOLD))
+private fun displayMoney(fen: Long): String = DecimalFormat("#,##0.00",DecimalFormatSymbols(Locale.CHINA)).format(BigDecimal.valueOf(fen,2))
+fun budgetPercent(spent: Long, limit: Long): String = if(limit<=0) "—" else BigDecimal.valueOf(spent).multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(limit),0,RoundingMode.HALF_UP).toPlainString()+"%"
+@Composable private fun Amount(fen: Long, modifier: Modifier=Modifier, large: Boolean=false) {
+    val number=displayMoney(kotlin.math.abs(fen))
+    val size=if(large) if(number.length>11) 29.sp else 40.sp else 20.sp
+    Text(buildAnnotatedString {
+        withStyle(SpanStyle(fontSize=if(large) 23.sp else 16.sp)) {append(if(fen<0) "−¥" else "¥")}
+        append(number)
+    },modifier,fontFamily=MoneyFont,fontWeight=FontWeight.Black,fontSize=size,letterSpacing=(-.5).sp)
+}
+@Composable private fun WinterQuote(text: String, small: Boolean=false) {
+    Text(text,fontFamily=FontFamily.Serif,fontStyle=FontStyle.Italic,fontSize=if(small) 9.5.sp else 11.sp,lineHeight=17.sp,color=Color(0xFF536F99),letterSpacing=if(small) .3.sp else .7.sp)
 }

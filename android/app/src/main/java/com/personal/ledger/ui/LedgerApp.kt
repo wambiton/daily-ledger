@@ -107,9 +107,9 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
             NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { LedgerGlyph("person") }, label = { Text("我的") })
         } },
         floatingActionButton = { if(route == "home" && tab == 0 && ready) ExtendedFloatingActionButton(
-            onClick = { beginNew(today.toString()) }, modifier = Modifier.testTag("new-entry")) { Text("＋ 记一笔") } },
+            onClick = { beginNew(today.toString()) }, containerColor=MaterialTheme.colorScheme.primary, contentColor=MaterialTheme.colorScheme.onPrimary, modifier = Modifier.testTag("new-entry")) { Text("＋ 记一笔") } },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().imePadding().then(if(route == "search" || route == "budget" || route == "automatic" || (route == "home" && tab == 0)) Modifier else Modifier.verticalScroll(rememberScrollState())).padding(horizontal = 20.dp),
+        Column(Modifier.padding(padding).fillMaxSize().imePadding().then(if(route == "search" || route == "budget" || route == "automatic" || (route == "home" && tab == 0)) Modifier else Modifier.verticalScroll(rememberScrollState())).padding(horizontal = if(route=="home"&&tab==0) 0.dp else 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (!ready) {
                 Text("正在打开账本…")

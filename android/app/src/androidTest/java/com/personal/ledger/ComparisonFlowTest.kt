@@ -39,7 +39,23 @@ class ComparisonFlowTest {
             ComparisonScreen(fixtures,listOf(Category("food","test","expense","餐饮"))) { opened = it.id }
         } } }
     }
+    private fun expandPeriods() {
+        if(ui.onAllNodesWithTag("period-A").fetchSemanticsNodes().isEmpty())
+            ui.onNodeWithTag("toggle-period-editor").performScrollTo().performClick()
+    }
+    @Test fun collapsedEditorKeepsResultsAndSelection() {
+        ui.onNodeWithTag("period-A").assertDoesNotExist()
+        ui.onNodeWithTag("total-a").assertIsDisplayed()
+        week("A",wa)
+        ui.onNodeWithTag("toggle-period-editor").performScrollTo().performClick()
+        ui.onNodeWithTag("period-A").assertDoesNotExist()
+        ui.onNodeWithTag("total-a").assertTextEquals("¥12.34")
+        expandPeriods()
+        ui.onNodeWithTag("period-A").assertExists()
+        ui.onNodeWithTag("total-a").assertTextEquals("¥12.34")
+    }
     private fun month(side: String, year: Int, month: Int) {
+        expandPeriods()
         ui.onNodeWithTag(if(side == "add") "add-period" else "period-$side").performScrollTo().performClick()
         ui.onNodeWithTag("month-year").performTextReplacement(year.toString())
         ui.onNodeWithTag("month-$month").performClick()
@@ -62,6 +78,7 @@ class ComparisonFlowTest {
         ui.onNodeWithText("请选择不同的比较周期").assertIsDisplayed()
     }
     private fun week(side: String, date: LocalDate) {
+        expandPeriods()
         ui.onNodeWithTag(if(side == "add") "add-period" else "period-$side").performScrollTo().performClick()
         onView(isAssignableFrom(DatePicker::class.java)).perform(object: ViewAction {
             override fun getConstraints(): Matcher<View> = isAssignableFrom(DatePicker::class.java)

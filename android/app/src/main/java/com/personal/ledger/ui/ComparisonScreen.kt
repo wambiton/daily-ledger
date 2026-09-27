@@ -24,6 +24,7 @@ import java.time.YearMonth
 fun ComparisonScreen(entries: List<Entry>, categories: List<Category>, onEntry: (Entry) -> Unit) {
     val today = Rules.today()
     val context = LocalContext.current
+    var editingPeriods by rememberSaveable { mutableStateOf(false) }
     var mode by rememberSaveable { mutableStateOf("week") }
     var type by rememberSaveable { mutableStateOf("expense") }
     // Separate, saveable selections survive mode switches and detail navigation.
@@ -81,6 +82,13 @@ fun ComparisonScreen(entries: List<Entry>, categories: List<Category>, onEntry: 
             FilterChip(selected = mode == "month", onClick = { mode = "month"; detailCategory = null }, label = { Text("按月") })
         }
         Text("已选 ${periods.size} ${if(mode == "week") "周" else "个月"} · 可选择不连续的周期")
+        TextButton(onClick = { editingPeriods = !editingPeriods }, modifier = Modifier.testTag("toggle-period-editor")) {
+            Text(if(editingPeriods) "收起周期选择" else "调整比较周期  ›")
+        }
+        if (!editingPeriods) {
+            Text(periods.take(2).mapIndexed { index, period -> "${label(index)}：${period.label}" }.joinToString("\n") +
+                if(periods.size > 2) "\n另有 ${periods.size - 2} 个周期" else "", style = MaterialTheme.typography.bodySmall)
+        } else {
         periods.forEachIndexed { index, period ->
             Row(Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick = { if(mode == "week") pickWeek(index) else monthPicker = index }, modifier = Modifier.weight(1f).testTag("period-${label(index)}")) {
@@ -98,6 +106,7 @@ fun ComparisonScreen(entries: List<Entry>, categories: List<Category>, onEntry: 
             Text(if(mode == "week") "＋ 添加一周" else "＋ 添加一个月")
         }
         Text("至少保留两个周期；差额及比例以 A 为基准。", style = MaterialTheme.typography.bodySmall)
+        }
           }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

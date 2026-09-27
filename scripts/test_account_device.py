@@ -90,6 +90,8 @@ def main():
         adb = str(ROOT / '.tools/android-sdk/platform-tools/adb.exe')
         serial = '3B159R0037100000'
         try:
+            subprocess.run([adb,'-s',serial,'shell','input','keyevent','KEYCODE_WAKEUP'],check=True,capture_output=True)
+            subprocess.run([adb,'-s',serial,'shell','wm','dismiss-keyguard'],check=True,capture_output=True)
             subprocess.run([adb,'-s',serial,'reverse','tcp:8767','tcp:8767'],check=True,capture_output=True)
             subprocess.run([adb,'-s',serial,'reverse','tcp:8770','tcp:8770'],check=True,capture_output=True)
             # Some realme builds deny shell permission grants; accept the app's
@@ -116,8 +118,9 @@ def main():
                 '-e','old_email',old_email,'-e','reset_email',reset_email,'com.personal.ledger.test/androidx.test.runner.AndroidJUnitRunner'],capture_output=True,timeout=240)
             permission_stop.set()
             output = result.stdout.decode('utf-8',errors='replace')
+            (private / 'account-device-latest.txt').write_text(output, encoding='utf-8')
             print(output)
-            if result.returncode or 'OK (29 tests)' not in output or 'FAILURES' in output:
+            if result.returncode or 'OK (31 tests)' not in output or 'FAILURES' in output:
                 raise RuntimeError('Device suite failed')
             assert not old_uploads, 'Legacy service must be blocked before upload'
         finally:

@@ -76,7 +76,7 @@ fun AccountScreen(vm: BackupViewModel) {
     var chooseImport by remember { mutableStateOf(false) }
     var showBooks by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, RoundedCornerShape(20.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        SectionBanner(account?.getJSONObject("user")?.getString("email") ?: "我的本机账本", "认真记下生活，安心保存每一笔", "person")
+        SectionBanner(account?.getJSONObject("user")?.getString("email") ?: "我的本机账本", "认真记下生活，安心保存每一笔", "person", com.personal.ledger.R.drawable.winter_profile)
         Text("账号与电脑备份", style = MaterialTheme.typography.titleMedium)
         if(uploading) Text("备份任务进行中：电脑未连接时继续在后台等候。以成功提示为准。")
         if(waiting) Text("等待电脑连接，手机账目仍然保留。")

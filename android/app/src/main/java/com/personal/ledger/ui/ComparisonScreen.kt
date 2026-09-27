@@ -72,7 +72,7 @@ fun ComparisonScreen(entries: List<Entry>, categories: List<Category>, onEntry: 
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        SectionBanner("看见每一段生活的变化", "自由选择多周或多月，比较真实收支", "bars")
+        SectionBanner("看见每一段生活的变化", "自由选择多周或多月，比较真实收支", "bars", com.personal.ledger.R.drawable.winter_comparison)
         Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
           Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("比较范围", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

@@ -1,6 +1,7 @@
 package com.personal.ledger
 
 import android.app.Application
+import androidx.compose.runtime.*
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,6 +23,25 @@ import java.util.UUID
 
 class AccountBackupFlowTest {
     @get:Rule val ui = createComposeRule()
+    @Test fun overviewKeepsAccountToolsBehindManagementEntry() {
+        val app=ApplicationProvider.getApplicationContext<Application>()
+        val vm=BackupViewModel(app,"overview-test-${UUID.randomUUID()}")
+        val holder=ViewModelStore().apply {put("vm",vm)}
+        var manage by mutableStateOf(false)
+        try {
+            ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) {
+                if(manage) AccountScreen(vm) else AccountOverview(vm) {manage=true}
+            } } }
+            ui.onNodeWithTag("overview-book").assertTextContains("原本机账本",substring=true)
+            ui.onNodeWithTag("account-password").assertDoesNotExist()
+            ui.onNodeWithTag("open-account-management").performScrollTo().performClick()
+            ui.onNodeWithTag("account-email").performScrollTo().assertIsDisplayed()
+            ui.onNodeWithTag("pair-computer").performScrollTo().assertIsDisplayed()
+            ui.runOnIdle {manage=false}
+            ui.onNodeWithTag("open-account-management").assertExists()
+            ui.onNodeWithTag("account-password").assertDoesNotExist()
+        } finally {holder.clear()}
+    }
     @Test fun oldComputerUploadIsBlockedWithoutAcknowledgingLocalChanges() {
         val args=InstrumentationRegistry.getArguments()
         Assume.assumeTrue(args.containsKey("old_email"))

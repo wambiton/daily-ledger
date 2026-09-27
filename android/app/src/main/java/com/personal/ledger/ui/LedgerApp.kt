@@ -29,7 +29,7 @@ import java.time.YearMonth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, externalBusy: Boolean = false, accountContent: (@Composable () -> Unit)? = null) {
+fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, externalBusy: Boolean = false, accountContent: (@Composable () -> Unit)? = null, accountOverview: (@Composable (() -> Unit) -> Unit)? = null) {
     val categories by vm.categories.collectAsStateWithLifecycle()
     val entries by vm.entries.collectAsStateWithLifecycle()
     val ready by vm.ready.collectAsStateWithLifecycle()
@@ -96,7 +96,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = { if(route != "home" || tab != 0) TopAppBar(
-            title = { Text(when(route) { "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "calendar" -> "日历账目"; "appearance" -> "外观与主题"; "automatic" -> "自动记账"; "budget" -> "预算计划"; "search" -> "搜索与筛选"; "trash" -> "回收站"; "files" -> "文件导入导出"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
+            title = { Text(when(route) { "account" -> "账号与电脑连接"; "choose" -> "选择分类"; "form" -> if(entryId == null) "记一笔" else "编辑账目"; "detail" -> "账目详情"; "manage" -> "分类管理"; "calendar" -> "日历账目"; "appearance" -> "外观与主题"; "automatic" -> "自动记账"; "budget" -> "预算计划"; "search" -> "搜索与筛选"; "trash" -> "回收站"; "files" -> "文件导入导出"; else -> when(tab) { 0 -> "账本"; 1 -> "比较"; else -> "我的" } }, fontWeight = FontWeight.Bold) },
             navigationIcon = { if(route != "home") TextButton(onClick = { leave() }, enabled = !busy) { Text("返回") } },
             actions = { if(route == "home" && tab == 0) Text("本地保存", modifier = Modifier.padding(end = 20.dp), style = MaterialTheme.typography.labelMedium) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -126,8 +126,9 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                         ComparisonScreen(entries, categories) { detailFromCalendar=false; detailFromSearch = false; detailId = it.id; route = "detail" }
                     }
                 } else {
-                    BackupStatusCard(vm)
-                    if(accountContent != null) {
+                    if(accountOverview != null) {
+                        accountOverview { route = "account" }
+                    } else if(accountContent != null) {
                         accountContent()
                     } else {
                         LedgerCard {
@@ -136,6 +137,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                             Text("账目保存在这台手机。请勿卸载应用或清除应用数据。", style = MaterialTheme.typography.bodySmall)
                         }
                     }
+                    BackupStatusCard(vm)
                     LedgerCard {
                         Text("账本工具", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         SettingsRow("文件导入导出", "导入账单或保存文件副本", "book", enabled = !busy) { route = "files" }
@@ -152,6 +154,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                     }
                     Spacer(Modifier.height(24.dp))
                 }
+                "account" -> accountContent?.invoke()
                 "search" -> screenState.SaveableStateProvider("search") {
                     SearchScreen(entries, categories, vm.owner) { detailFromSearch = true; detailId = it.id; route = "detail" }
                 }

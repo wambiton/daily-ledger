@@ -23,6 +23,29 @@ import java.util.UUID
 
 class AccountBackupFlowTest {
     @get:Rule val ui = createComposeRule()
+    // Interrupted device runs must not leave synthetic retries competing with later tests.
+    // Only explicitly named UUID test jobs are cancelled; ledger files are retained.
+    @Before @After fun cancelInterruptedSyntheticUploads() {
+        val app=ApplicationProvider.getApplicationContext<Application>()
+        // UI fixtures retain their databases, but their 12-hour maintenance jobs
+        // must not survive indefinitely and occupy WorkManager scheduling slots.
+        val fixtureDatabase=Regex("(ui-test|budget-ui)-[0-9a-f-]{36}\\.db")
+        val manager=androidx.work.WorkManager.getInstance(app)
+        app.databaseList().filter { fixtureDatabase.matches(it) }.forEach { database ->
+            listOf("budget/$database/local-preview","trash-$database-local-preview").forEach { name ->
+                manager.cancelUniqueWork(name).result.get(20,java.util.concurrent.TimeUnit.SECONDS)
+            }
+        }
+        val pattern=Regex("backup-job-(legacy-test|register-test|external-test|test)-[0-9a-f-]{36}\\.xml")
+        java.io.File(app.applicationInfo.dataDir,"shared_prefs").listFiles().orEmpty()
+            .filter { pattern.matches(it.name) }.forEach { file ->
+                val namespace=file.name.removePrefix("backup-job-").removeSuffix(".xml")
+                if(BackgroundBackup.active(app,namespace)) {
+                    BackgroundBackup.cancel(app,namespace)
+                    androidx.work.WorkManager.getInstance(app).cancelUniqueWork(BackgroundBackup.name(namespace)).result.get(20,java.util.concurrent.TimeUnit.SECONDS)
+                }
+            }
+    }
     @Test fun overviewKeepsAccountToolsBehindManagementEntry() {
         val app=ApplicationProvider.getApplicationContext<Application>()
         val vm=BackupViewModel(app,"overview-test-${UUID.randomUUID()}")
@@ -65,7 +88,12 @@ class AccountBackupFlowTest {
                 val before=runBlocking {db.ledger().allEntries(owner)}
                 val pending=runBlocking {db.ledger().pending(owner)}
                 ui.onNodeWithTag("upload-backup").performScrollTo().performClick()
-                ui.waitUntil(30000) {vm.uploadResult.value.contains("电脑端版本较旧") && !vm.uploading.value}
+                try {
+                    ui.waitUntil(30000) {vm.uploadResult.value.contains("电脑端版本较旧") && !vm.uploading.value}
+                } catch (failure: androidx.compose.ui.test.ComposeTimeoutException) {
+                    val work=androidx.work.WorkManager.getInstance(app).getWorkInfosForUniqueWork(BackgroundBackup.name(namespace)).get(5,java.util.concurrent.TimeUnit.SECONDS)
+                    throw AssertionError("Upload timeout: states=${work.map { "${it.state}/attempt=${it.runAttemptCount}/stop=${it.stopReason}" }}, status=${vm.uploadResult.value}, process=${Application.getProcessName()}/${app.applicationInfo.processName}",failure)
+                }
                 ui.onNodeWithTag("upload-result").assertTextContains("本次备份未成功",substring=true)
                 assertFalse(vm.lastBackup.value.contains("版本 1"))
                 runBlocking {
@@ -270,7 +298,7 @@ class AccountBackupFlowTest {
                 ui.onNodeWithTag("restore-backup").assertDoesNotExist()
             } finally { LedgerDatabases.release(accountName) }
         } finally {
-            holder.clear(); LedgerDatabases.release(local); app.deleteDatabase(local)
+            holder.clear(); LedgerDatabases.release(local)
             accountName?.let { app.deleteDatabase(it) }; AccountVault(app,namespace).clear()
         }
     }
@@ -300,7 +328,7 @@ class AccountBackupFlowTest {
             ui.waitUntil(10000) { !vm.busy.value && !vm.uploading.value }
             assertNull(vm.account.value)
         } finally {
-            holder.clear(); name?.let { app.deleteDatabase(it) }; AccountVault(app,namespace).clear()
+            holder.clear()
         }
     }
 

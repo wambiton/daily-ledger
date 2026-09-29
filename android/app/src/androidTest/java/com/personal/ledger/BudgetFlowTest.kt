@@ -24,7 +24,16 @@ class BudgetFlowTest {
         ui.setContent {LedgerTheme {LedgerApp(vm)}}
         ui.waitUntil(10000){vm.ready.value && vm.categories.value.isNotEmpty()}
     }
-    @After fun close() {store.clear()}
+    @After fun close() {
+        store.clear()
+        if(::vm.isInitialized) {
+            val manager=androidx.work.WorkManager.getInstance(ApplicationProvider.getApplicationContext<Application>())
+            for(name in listOf("budget/${vm.databaseName}/${vm.owner}","trash-${vm.databaseName}-${vm.owner}")) {
+                manager.cancelUniqueWork(name).result.get(20,java.util.concurrent.TimeUnit.SECONDS)
+            }
+        }
+        // Ledger contents remain available after the test.
+    }
     @Test fun createBudgetThroughEditorThenShowThresholdAndRearm() {
         ui.onNodeWithTag("home-dashboard").performScrollToNode(hasTestTag("open-budget"))
         ui.onNodeWithTag("open-budget").performClick()

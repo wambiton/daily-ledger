@@ -27,7 +27,14 @@ class LedgerFlowTest {
         ui.waitUntil(10000) { vm.ready.value }
         ui.waitForIdle()
     }
-    @After fun cleanup() { store.clear() }
+    @After fun cleanup() {
+        store.clear()
+        val manager=androidx.work.WorkManager.getInstance(app)
+        for(name in listOf("budget/$dbName/local-preview","trash-$dbName-local-preview")) {
+            manager.cancelUniqueWork(name).result.get(20,java.util.concurrent.TimeUnit.SECONDS)
+        }
+        // Keep the fixture database for inspection; only retire its scheduled jobs.
+    }
 
     @Test fun expenseCreateEditAndDelete() {
         ui.onNodeWithTag("new-entry").performClick()

@@ -57,24 +57,21 @@ import java.time.YearMonth
     }
     val plan=plans.firstOrNull{it.owner==owner&&it.startMonth<=month&&it.endMonth>=month}
     Box(Modifier.fillMaxSize()) {
-    if(winter) Image(painterResource(R.drawable.winter_landscape),null,Modifier.matchParentSize(),contentScale=ContentScale.Crop,alpha=.70f)
+    if(winter) Image(painterResource(R.drawable.winter_landscape),null,Modifier.matchParentSize(),contentScale=ContentScale.Crop,alpha=.30f)
     LazyColumn(Modifier.fillMaxSize().testTag("home-dashboard"),verticalArrangement=Arrangement.spacedBy(0.dp),contentPadding=PaddingValues(start=12.dp,end=12.dp,top=8.dp,bottom=104.dp)) {
         item(key="header") {
-            Row(Modifier.fillMaxWidth().padding(vertical=12.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                    Text("我的账本",fontSize=28.sp,fontWeight=FontWeight.ExtraBold,fontFamily=if(winter) FontFamily.Serif else FontFamily.Default)
+                    Text("我的账本",fontSize=24.sp,fontWeight=FontWeight.ExtraBold,fontFamily=if(winter) FontFamily.Serif else FontFamily.Default)
                     Text(if(winter) "雪乃 · 冬日  ❄" else "记录生活 · 心中有数",fontSize=13.sp,color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    if(winter) WinterQuote("一如既往，\n认真地对待每一天。")
+                    if(winter) WinterQuote("认真地对待每一天。")
                     else Text("${today.monthValue}月${today.dayOfMonth}日 · 本地保存",style=MaterialTheme.typography.labelSmall)
                 }
                 if(winter) {
-                    Character(false,Modifier.size(100.dp).clip(CircleShape).border(2.dp,Color.White,CircleShape))
-                    Column(Modifier.width(82.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                        Text("雪乃 · 冬日",fontFamily=FontFamily.Serif,fontSize=12.sp)
-                        WinterQuote("生活或许平凡，\n但依然值得认真。",small=true)
-                    }
-                } else Box(Modifier.size(72.dp).background(MaterialTheme.colorScheme.primaryContainer,CircleShape),contentAlignment=Alignment.Center) {
-                    Text("账",fontSize=28.sp,color=MaterialTheme.colorScheme.onPrimaryContainer)
+                    Character(false,Modifier.size(64.dp).clip(CircleShape).border(2.dp,Color.White,CircleShape))
+
+                } else Box(Modifier.size(56.dp).background(MaterialTheme.colorScheme.primaryContainer,CircleShape),contentAlignment=Alignment.Center) {
+                    Text("账",fontSize=24.sp,color=MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
         }
@@ -90,7 +87,6 @@ import java.time.YearMonth
                     Column(Modifier.weight(1f)) {Text("本月收入",style=MaterialTheme.typography.labelMedium);Amount(income)}
                     Column(Modifier.weight(1f)) {Text("本月结余",style=MaterialTheme.typography.labelMedium);Amount(income-expense)}
                 }
-                if(winter) WinterQuote("冬日的每一笔，都是更好的自己。")
             }
         }
         item(key="budget") {
@@ -115,9 +111,8 @@ import java.time.YearMonth
                                 color=if(rest<0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                         }
                     }
-                    if(winter) Column(Modifier.width(82.dp),horizontalAlignment=Alignment.CenterHorizontally) {
-                        WinterQuote("一点一滴，\n让未来更清晰。")
-                        Character(true,Modifier.width(78.dp).height(94.dp))
+                    if(winter) Column(Modifier.width(56.dp),horizontalAlignment=Alignment.CenterHorizontally) {
+                        Character(true,Modifier.width(56.dp).height(68.dp))
                     }
                 }
                 if(alertCount>0) Text("${alertCount}项预算达到提醒阈值",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.error)
@@ -160,7 +155,7 @@ import java.time.YearMonth
 
 @Composable private fun DashboardCard(modifier: Modifier=Modifier, content: @Composable ColumnScope.()->Unit) {
     Surface(modifier.fillMaxWidth().padding(bottom=10.dp),shape=RoundedCornerShape(16.dp),color=MaterialTheme.colorScheme.surface.copy(alpha=if(LocalAppearance.current.selected==LedgerAppearance.WINTER) .97f else 1f)) {
-        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp),content=content)
+        Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp),content=content)
     }
 }
 

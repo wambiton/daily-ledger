@@ -23,7 +23,7 @@ internal fun SectionBanner(title: String, subtitle: String, glyph: String, artwo
         Box(Modifier.fillMaxWidth()) {
             if (winter) Image(painterResource(R.drawable.winter_landscape), null,
                 Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = .35f)
-            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -31,8 +31,8 @@ internal fun SectionBanner(title: String, subtitle: String, glyph: String, artwo
                     Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (winter && artwork != null) {
-                    Image(painterResource(artwork), null, Modifier.size(80.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Fit)
-                } else if (winter) Character(glyph != "person", Modifier.size(64.dp)) else LedgerGlyph(glyph)
+                    Image(painterResource(artwork), null, Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Fit)
+                } else if (winter) Character(glyph != "person", Modifier.size(48.dp)) else LedgerGlyph(glyph)
             }
         }
     }

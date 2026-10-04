@@ -74,16 +74,17 @@ fun ComparisonScreen(entries: List<Entry>, categories: List<Category>, onEntry: 
     }
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         SectionBanner("看见每一段生活的变化", "自由选择多周或多月，比较真实收支", "bars", com.personal.ledger.R.drawable.winter_comparison)
-        Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
+        Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
           Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("比较范围", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             FilterChip(selected = mode == "week", onClick = { mode = "week"; detailCategory = null }, label = { Text("按周") })
             FilterChip(selected = mode == "month", onClick = { mode = "month"; detailCategory = null }, label = { Text("按月") })
         }
-        Text("已选 ${periods.size} ${if(mode == "week") "周" else "个月"} · 可选择不连续的周期")
-        TextButton(onClick = { editingPeriods = !editingPeriods }, modifier = Modifier.testTag("toggle-period-editor")) {
-            Text(if(editingPeriods) "收起周期选择" else "调整比较周期  ›")
+        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("已选 ${periods.size} ${if(mode == "week") "周" else "个月"}", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+            TextButton(onClick = { editingPeriods = !editingPeriods }, modifier = Modifier.testTag("toggle-period-editor")) {
+                Text(if(editingPeriods) "收起周期选择" else "调整比较周期  ›")
+            }
         }
         if (!editingPeriods) {
             Text(periods.take(2).mapIndexed { index, period -> "${label(index)}：${period.label}" }.joinToString("\n") +

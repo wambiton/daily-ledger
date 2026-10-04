@@ -163,8 +163,8 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                     CalendarCard(YearMonth.parse(monthText), LocalDate.parse(selectedDate), entries.filter { it.deletedAt == null },
                         onMonth = { monthText = it.toString() },
                         onJump = { chooseDate(selectedDate) { selectedDate = it.toString(); monthText = YearMonth.from(it).toString() } },
-                        onDate = { selectedDate = it.toString() })
-                    TextButton(onClick = { selectedDate = today.toString(); monthText = YearMonth.from(today).toString() }) { Text("回到今天") }
+                        onDate = { selectedDate = it.toString() },
+                        onToday = { selectedDate = today.toString(); monthText = YearMonth.from(today).toString() })
                     DayCard(if(selectedDate==today.toString()) "今天 · ${today.monthValue}月${today.dayOfMonth}日" else selectedDate,
                         entries.filter {it.date==selectedDate},byId,
                         onEntry={detailFromSearch=false;detailFromCalendar=true;detailId=it.id;route="detail"},reveal=true)
@@ -288,7 +288,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
     }
 }
 
-@Composable private fun CalendarCard(month: YearMonth, selected: LocalDate, entries: List<Entry>, onMonth: (YearMonth) -> Unit, onJump: () -> Unit, onDate: (LocalDate) -> Unit) {
+@Composable private fun CalendarCard(month: YearMonth, selected: LocalDate, entries: List<Entry>, onMonth: (YearMonth) -> Unit, onJump: () -> Unit, onDate: (LocalDate) -> Unit, onToday: () -> Unit) {
     val today = Rules.today()
     val monthly = entries.filter { it.date.startsWith(month.toString()) }
     val dailyExpense = monthly.filter { it.type == "expense" }.groupBy { it.date }.mapValues { (_, rows) -> rows.sumOf { it.amountFen } }
@@ -297,6 +297,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = { onMonth(month.minusMonths(1)) }, modifier = Modifier.testTag("previous-month")) { Text("‹") }
             TextButton(onClick = onJump) { Text("${month.year}年${month.monthValue}月") }
+            TextButton(onClick = onToday) { Text("回到今天", style = MaterialTheme.typography.labelSmall) }
             TextButton(onClick = { onMonth(month.plusMonths(1)) }, enabled = month < YearMonth.from(today)) { Text("›") }
         }
         Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {

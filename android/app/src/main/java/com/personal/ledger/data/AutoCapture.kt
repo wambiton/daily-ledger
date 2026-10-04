@@ -38,9 +38,27 @@ object AutoCapture {
 
 class AutoCaptureService: NotificationListenerService() {
     companion object {val connected=MutableStateFlow(false)}
-    override fun onListenerConnected() {connected.value=true;AutoCapture.prefs(this).edit().putLong("connected_at",System.currentTimeMillis()).apply()}
-    override fun onListenerDisconnected() {connected.value=false}
-    override fun onDestroy() {connected.value=false;super.onDestroy()}
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        connected.value=true
+        AutoCapture.prefs(this).edit().putLong("connected_at",System.currentTimeMillis()).remove("connection_error").apply()
+        AutoCaptureRecovery.sync(this,"系统已连接")
+    }
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        connected.value=false
+        AutoCapture.prefs(this).edit().putLong("disconnected_at",System.currentTimeMillis()).apply()
+        AutoCaptureRecovery.sync(this,"监听断开")
+    }
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        AutoCaptureRecovery.sync(this,"移出最近任务")
+    }
+    override fun onDestroy() {
+        connected.value=false
+        AutoCapture.prefs(this).edit().putLong("disconnected_at",System.currentTimeMillis()).apply()
+        super.onDestroy()
+    }
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if(sbn.packageName !in PaymentNoticeParser.packages) return
         val p=AutoCapture.prefs(this)

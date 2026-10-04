@@ -1,11 +1,9 @@
 package com.personal.ledger.ui
 
 import android.Manifest
-import android.content.ComponentName
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
-import android.service.notification.NotificationListenerService
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -41,11 +39,12 @@ import java.time.format.DateTimeFormatter
     val busy by vm.busy.collectAsStateWithLifecycle()
     val review by vm.review.collectAsStateWithLifecycle()
     val connected by AutoCaptureService.connected.collectAsStateWithLifecycle()
-    val granted=remember(tick){NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)}
+    val granted=remember(tick){AutoCaptureRecovery.granted(context)}
     val enabled=remember(tick){prefs.getBoolean("enabled",false)}
     val target=remember(tick){AutoCapture.target(context)}
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){tick++}
     LaunchedEffect(Unit){while(true){tick++;delay(1500)}}
+    LaunchedEffect(granted,enabled){AutoCaptureRecovery.sync(context,"自动记账设置")}
     if(review!=null) {
         key(review!!.candidate.id) {AutoEntryReview(review!!,busy,error,{vm.review.value=null},{type,category,amount,date,note,remember,replace->vm.save(type,category,amount,date,note,remember,replace)},{vm.ignore(review!!.candidate.id)})}
         return
@@ -60,14 +59,28 @@ import java.time.format.DateTimeFormatter
             Text("查看其他账本不会改变目标；更换目标前收到的记录仍保留原账本。")
             Text(if(granted) if(connected) "通知读取：已连接" else "权限已开启，正在等待系统连接" else "通知读取：未授权")
             OutlinedButton(onClick={context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))}) {Text("打开通知使用权设置")}
-            if(granted&&!connected) TextButton(onClick={NotificationListenerService.requestRebind(ComponentName(context,AutoCaptureService::class.java))}) {Text("重新连接通知服务")}
+            if(granted&&enabled&&!connected) TextButton(onClick={AutoCaptureRecovery.sync(context,"手动重连")}) {Text("重新连接通知服务")}
             Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text("自动记账")
                 Switch(checked=enabled,onCheckedChange={value ->
-                    prefs.edit().putBoolean("enabled",value).putLong("started_at",System.currentTimeMillis()).apply();tick++
+                    prefs.edit().putBoolean("enabled",value).putLong("started_at",System.currentTimeMillis()).apply()
+                    AutoCaptureRecovery.sync(context,if(value) "开启自动记账" else "关闭自动记账");tick++
                 },enabled=(!busy && (enabled || granted&&target!=null)),modifier=Modifier.testTag("auto-enabled"))
             }
             Text("普通消费仅沿用你确认并记住的商户分类；首次出现的商户待确认。退款使用收入分类“退款”。")
+            Text("后台运行",style=MaterialTheme.typography.titleMedium)
+            Text("开启后会在监听断开、手机启动及软件更新时尝试重连，并由系统定期检查。无需每次付款前打开软件；系统限制后台时仍可能延迟或漏收。")
+            val power=context.getSystemService(android.os.PowerManager::class.java)
+            Text(if(power.isIgnoringBatteryOptimizations(context.packageName)) "电池优化：已豁免" else "电池优化：未豁免，可在系统设置中调整")
+            OutlinedButton(onClick={
+                val intent=Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,android.net.Uri.parse("package:${context.packageName}"))
+                context.startActivity(intent)
+            }) {Text("打开应用后台设置")}
+            OutlinedButton(onClick={context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))}) {Text("打开电池优化设置")}
+            Text("realme：在应用耗电或电池管理中允许后台活动；如有自启动选项，也请允许。若划掉后仍断开，可在最近任务中锁定本应用。具体名称以系统为准。不要点“强行停止”，之后需手动打开一次。",style=MaterialTheme.typography.bodySmall)
+            Text("最近连接：${whenText(prefs.getLong("connected_at",0))}；最近断开：${whenText(prefs.getLong("disconnected_at",0))}",style=MaterialTheme.typography.bodySmall)
+            Text("最近重连请求：${whenText(prefs.getLong("reconnect_at",0))}；请求不代表已经连接。断开期间漏掉的通知无法保证补回。",style=MaterialTheme.typography.bodySmall)
+            prefs.getString("connection_error",null)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             OutlinedButton(onClick={
                 if(Build.VERSION.SDK_INT>=33 && androidx.core.content.ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 else context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName))

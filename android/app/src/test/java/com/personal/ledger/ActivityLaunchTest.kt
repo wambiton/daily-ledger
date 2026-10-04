@@ -14,6 +14,10 @@ import org.robolectric.annotation.Config
 @Config(sdk = [28])
 class ActivityLaunchTest {
     @Test fun mainActivityStartsAndAttachesContent() {
+        // Robolectric does not run AndroidX Startup's provider as a real device does.
+        androidx.work.WorkManager.initialize(
+            androidx.test.core.app.ApplicationProvider.getApplicationContext(),
+            androidx.work.Configuration.Builder().build())
         val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
         try {
             val activity = controller.get()

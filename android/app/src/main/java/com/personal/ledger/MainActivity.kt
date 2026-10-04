@@ -12,6 +12,10 @@ import com.personal.ledger.ui.LedgerHost
 
 class MainActivity : ComponentActivity() {
     private val autoRequest=androidx.compose.runtime.mutableLongStateOf(0)
+    override fun onResume() {
+        super.onResume()
+        com.personal.ledger.data.AutoCaptureRecovery.sync(this,"返回应用")
+    }
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         if(intent.action=="com.personal.ledger.AUTO_ENTRY") autoRequest.longValue=System.nanoTime()

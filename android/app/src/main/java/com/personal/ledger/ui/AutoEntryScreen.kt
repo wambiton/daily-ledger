@@ -33,6 +33,7 @@ import java.time.format.DateTimeFormatter
     val prefs=remember {AutoCapture.prefs(context)}
     var tick by remember {mutableIntStateOf(0)}
     var choose by remember {mutableStateOf(false)}
+    var settingsExpanded by rememberSaveable {mutableStateOf(false)}
     var history by rememberSaveable {mutableStateOf(false)}
     val rows by vm.rows.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
@@ -52,14 +53,10 @@ import java.time.format.DateTimeFormatter
     fun whenText(time: Long)=if(time<=0) "尚无" else Instant.ofEpochMilli(time).atZone(Rules.zone).format(DateTimeFormatter.ofPattern("MM-dd HH:mm:ss"))
     LazyColumn(Modifier.fillMaxSize().testTag("auto-list"),verticalArrangement=Arrangement.spacedBy(12.dp),contentPadding=PaddingValues(bottom=24.dp)) {
         item {
-            Text("自动记账 · 通知验证版",style=MaterialTheme.typography.titleLarge)
-            Text("仅接收开启后的新通知，不读取历史账单。没有系统通知或信息隐藏时可能无法识别。待确认项不计入统计和预算。")
-            Text("固定目标：${target?.third ?: "尚未指定账本"}",modifier=Modifier.testTag("auto-target"))
-            OutlinedButton(onClick={choose=true},enabled=!busy) {Text("选择自动记账账本")}
-            Text("查看其他账本不会改变目标；更换目标前收到的记录仍保留原账本。")
-            Text(if(granted) if(connected) "通知读取：已连接" else "权限已开启，正在等待系统连接" else "通知读取：未授权")
-            OutlinedButton(onClick={context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))}) {Text("打开通知使用权设置")}
-            if(granted&&enabled&&!connected) TextButton(onClick={AutoCaptureRecovery.sync(context,"手动重连")}) {Text("重新连接通知服务")}
+            Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Text(if(!enabled) "自动记账已关闭" else if(granted && connected) "已连接 · 后台识别中" else "需要处理 · 通知未连接",style=MaterialTheme.typography.titleMedium)
+                    Text("固定目标：${target?.third ?: "尚未指定账本"}",modifier=Modifier.testTag("auto-target"))
             Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text("自动记账")
                 Switch(checked=enabled,onCheckedChange={value ->
@@ -67,6 +64,18 @@ import java.time.format.DateTimeFormatter
                     AutoCaptureRecovery.sync(context,if(value) "开启自动记账" else "关闭自动记账");tick++
                 },enabled=(!busy && (enabled || granted&&target!=null)),modifier=Modifier.testTag("auto-enabled"))
             }
+                    TextButton(onClick={choose=true},enabled=!busy) {Text("选择自动记账账本")}
+                }
+            }
+            TextButton(onClick={settingsExpanded=!settingsExpanded},modifier=Modifier.testTag("auto-settings-toggle")) {
+                Text(if(settingsExpanded) "收起连接与后台设置" else "连接与后台设置  ›")
+            }
+            if(settingsExpanded) {
+            Text("仅接收开启后的新通知，不读取历史账单。没有系统通知或信息隐藏时可能无法识别。")
+            Text("查看其他账本不会改变目标；更换目标前收到的记录仍保留原账本。")
+            Text(if(granted) if(connected) "通知读取：已连接" else "权限已开启，正在等待系统连接" else "通知读取：未授权")
+            OutlinedButton(onClick={context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))}) {Text("打开通知使用权设置")}
+            if(granted&&enabled&&!connected) TextButton(onClick={AutoCaptureRecovery.sync(context,"手动重连")}) {Text("重新连接通知服务")}
             Text("普通消费仅沿用你确认并记住的商户分类；首次出现的商户待确认。退款使用收入分类“退款”。")
             Text("后台运行",style=MaterialTheme.typography.titleMedium)
             Text("开启后会在监听断开、手机启动及软件更新时尝试重连，并由系统定期检查。无需每次付款前打开软件；系统限制后台时仍可能延迟或漏收。")
@@ -92,6 +101,8 @@ import java.time.format.DateTimeFormatter
             prefs.getString("error",null)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             Text("待确认和商户规则仅在本手机保存；正式入账后随原有账号备份。",style=MaterialTheme.typography.bodySmall)
+            }
+            Text("首次商户或信息不完整时需确认，待确认项不计入统计。",style=MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected=!history,onClick={history=false},label={Text("待确认（${rows.count{it.status=="pending"}}）")})
                 FilterChip(selected=history,onClick={history=true},label={Text("已处理记录")})

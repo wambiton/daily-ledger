@@ -29,7 +29,7 @@ import java.time.YearMonth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, externalBusy: Boolean = false, accountContent: (@Composable () -> Unit)? = null, accountOverview: (@Composable (() -> Unit) -> Unit)? = null) {
+fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, externalBusy: Boolean = false, accountContent: (@Composable () -> Unit)? = null, accountOverview: (@Composable (() -> Unit, @Composable () -> Unit) -> Unit)? = null) {
     val categories by vm.categories.collectAsStateWithLifecycle()
     val entries by vm.entries.collectAsStateWithLifecycle()
     val ready by vm.ready.collectAsStateWithLifecycle()
@@ -127,7 +127,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                     }
                 } else {
                     if(accountOverview != null) {
-                        accountOverview { route = "account" }
+                        accountOverview({ route = "account" }) { BackupStatusCard(vm, embedded = true) }
                     } else if(accountContent != null) {
                         accountContent()
                     } else {
@@ -137,19 +137,21 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                             Text("账目保存在这台手机。请勿卸载应用或清除应用数据。", style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                    BackupStatusCard(vm)
+                    if(accountOverview == null) BackupStatusCard(vm)
                     LedgerCard {
-                        Text("账本工具", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        SettingsRow("文件导入导出", "导入账单或保存文件副本", "book", enabled = !busy) { route = "files" }
-                        HorizontalDivider()
-                        SettingsRow("回收站", "查看与恢复已删除账目", "calendar", enabled = !busy) { route = "trash" }
+                        Text("记账工具", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        SettingsRow("自动记账", "连接状态、目标账本与待确认记录", "book", "open-automatic") { route = "automatic" }
                         HorizontalDivider()
                         SettingsRow("分类管理", "管理收入与支出分类", "bars") { type = "expense"; route = "manage" }
                     }
                     LedgerCard {
-                        Text("偏好设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        SettingsRow("自动记账（通知验证版）", "连接状态、目标账本与待确认记录", "book", "open-automatic") { route = "automatic" }
+                        Text("数据与备份", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        SettingsRow("文件导入导出", "导入账单或保存文件副本", "book", enabled = !busy) { route = "files" }
                         HorizontalDivider()
+                        SettingsRow("回收站", "查看与恢复已删除账目", "calendar", enabled = !busy) { route = "trash" }
+                    }
+                    LedgerCard {
+                        Text("外观设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         SettingsRow("外观与主题", "默认清爽风格 / 雪乃·冬日", "person", "open-appearance") { route = "appearance" }
                     }
                     Spacer(Modifier.height(24.dp))

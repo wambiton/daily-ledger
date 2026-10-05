@@ -41,7 +41,7 @@ fun LedgerHost(autoOpenRequest: Long = 0) {
             @Suppress("UNCHECKED_CAST")
             override fun <T: ViewModel> create(modelClass: Class<T>): T = LedgerViewModel(app, name, owner) as T
         })
-        LedgerApp(ledger, autoOpenRequest=autoOpenRequest, externalBusy = networkBusy, accountContent = { AccountScreen(backup) }, accountOverview = { onManage -> AccountOverview(backup, onManage) })
+        LedgerApp(ledger, autoOpenRequest=autoOpenRequest, externalBusy = networkBusy, accountContent = { AccountScreen(backup) }, accountOverview = { onManage, status -> AccountOverview(backup, status, onManage) })
     }
 }
 

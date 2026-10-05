@@ -17,7 +17,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personal.ledger.R
 
 @Composable
-fun AccountOverview(vm: BackupViewModel, onManage: () -> Unit) {
+fun AccountOverview(vm: BackupViewModel, status: (@Composable () -> Unit)? = null, onManage: () -> Unit) {
     val account by vm.account.collectAsStateWithLifecycle()
     val selected by vm.selectedBook.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -30,10 +30,13 @@ fun AccountOverview(vm: BackupViewModel, onManage: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionBanner(account?.getJSONObject("user")?.getString("email") ?: "我的本机账本",
             "认真记下生活，安心保存每一笔", "person", R.drawable.winter_profile)
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("当前账本：${selected?.optString("label") ?: account?.getJSONObject("user")?.getString("email") ?: "原本机账本"}",
             style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("overview-book"))
+        status?.invoke()
         if (account != null) {
-            Text(if (waiting) "等待电脑连接" else if (uploading) "备份任务进行中" else result,
+            if(waiting || uploading || result != "当前账号尚未发起备份") Text(if (waiting) "等待电脑连接" else if (uploading) "备份任务进行中" else result,
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("overview-result"))
             Button(onClick = {
                 if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
@@ -44,9 +47,11 @@ fun AccountOverview(vm: BackupViewModel, onManage: () -> Unit) {
             if (!vm.viewingAccount()) Text("当前是其他手机账本，请在账本管理中切回账号账本后备份。", style = MaterialTheme.typography.bodySmall)
             if (uploading) TextButton(onClick = { vm.cancelUpload() }) { Text("取消后台备份") }
         }
-        OutlinedButton(onClick = onManage, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("open-account-management")) {
+        TextButton(onClick = onManage, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("open-account-management")) {
             Text(if (account == null) "登录 / 注册与连接电脑" else "账号、连接与账本管理  ›")
         }
-        if (message.isNotEmpty()) Text(message, style = MaterialTheme.typography.bodySmall)
+        if (message.isNotEmpty() && message != result) Text(message, style = MaterialTheme.typography.bodySmall)
+        }
+        }
     }
 }

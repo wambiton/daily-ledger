@@ -12,16 +12,16 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 
 @Composable
-fun BackupStatusCard(vm: LedgerViewModel) {
+fun BackupStatusCard(vm: LedgerViewModel, embedded: Boolean = false) {
     val entries by vm.entries.collectAsStateWithLifecycle()
     val trash by vm.trash.collectAsStateWithLifecycle()
     val changes by vm.pending.collectAsStateWithLifecycle()
     val pending by vm.pendingEntries.collectAsStateWithLifecycle()
     val state by vm.backupState.collectAsStateWithLifecycle()
-    Card(Modifier.fillMaxWidth().testTag("local-backup-summary"), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("当前账本 · 已保存在手机",style=MaterialTheme.typography.titleMedium)
-            Text("正常账目${entries.size}笔 · 回收站${trash.size}笔")
+    Card(Modifier.fillMaxWidth().testTag("local-backup-summary"), colors = CardDefaults.cardColors(containerColor = if(embedded) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.padding(if(embedded) 0.dp else 16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text("已保存在手机",style=MaterialTheme.typography.titleMedium)
+            Text("正常账目${entries.size}笔 · 回收站${trash.size}笔",style=MaterialTheme.typography.bodySmall)
             Text(when {
                 pending > 0 -> "${pending}笔账目变更待备份"
                 changes > 0 -> "分类或预算设置变更待备份"
@@ -29,7 +29,7 @@ fun BackupStatusCard(vm: LedgerViewModel) {
                 else -> "当前手机账本没有待上传修改"
             },modifier=Modifier.testTag("pending-backup-summary"))
             state?.lastSuccessAt?.let { time ->
-                Text("最近与电脑确认：${Instant.ofEpochMilli(time).atZone(Rules.zone).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))} · 第${state?.cursor}版")
+                Text("最近与电脑确认：${Instant.ofEpochMilli(time).atZone(Rules.zone).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))} · 第${state?.cursor}版",style=MaterialTheme.typography.bodySmall)
             }
             Text("以电脑确认成功为准",style=MaterialTheme.typography.bodySmall)
         }

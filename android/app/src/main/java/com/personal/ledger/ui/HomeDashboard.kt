@@ -42,7 +42,8 @@ import java.time.YearMonth
 }
 
 @Composable fun HomeDashboard(owner: String, entries: List<Entry>, categories: List<Category>, plans: List<BudgetPlan>,
-    alertCount: Int, onBudget: ()->Unit, onCalendar: ()->Unit, onSearch: ()->Unit, onEntry: (Entry)->Unit) {
+    alertCount: Int, onBudget: ()->Unit, onCalendar: ()->Unit, onSearch: ()->Unit, onEntry: (Entry)->Unit,
+    automaticStatus: (@Composable () -> Unit)? = null) {
     val winter=LocalAppearance.current.selected==LedgerAppearance.WINTER
     val today=Rules.today()
     val month=YearMonth.from(today).toString()
@@ -75,6 +76,7 @@ import java.time.YearMonth
                 }
             }
         }
+        if(automaticStatus != null) item(key="automatic-status") { automaticStatus() }
         item(key="summary") {
             DashboardCard(Modifier.testTag("home-summary")) {
                 Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)) {LedgerGlyph("bars",color=Color(0xFF76ACED));Text("本月支出",style=MaterialTheme.typography.titleMedium)}

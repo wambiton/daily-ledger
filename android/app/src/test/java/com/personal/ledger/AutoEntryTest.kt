@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.personal.ledger.data.*
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
@@ -21,6 +22,17 @@ class AutoEntryTest {
         ledger=Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(),LedgerDatabase::class.java).build()
     }
     @After fun close() {inbox.close();ledger.close()}
+    @Test fun pendingSummaryCountsAllBooksButExcludesProcessedRecords() = runBlocking {
+        val n=notice()
+        val c=target(n)
+        inbox.auto().insert(c)
+        inbox.auto().insert(c.copy(id="other-book",owner="b",databaseName="other.db"))
+        inbox.auto().insert(c.copy(id="booked",status="booked"))
+        inbox.auto().insert(c.copy(id="ignored",status="ignored"))
+        assertEquals(2,inbox.auto().pendingCount().first())
+        inbox.auto().update(c.copy(status="ignored"))
+        assertEquals(1,inbox.auto().pendingCount().first())
+    }
     private fun notice(key: String="a",text: String="支付成功，支出18.50元\n商户：校园食堂")=requireNotNull(PaymentNoticeParser.parse("com.tencent.mm",key,time,"微信支付",text))
     private fun target(n: PaymentNotice)=PaymentCandidate(n.id,"test.db","a","测试账本",n.platform,n.date,n.amountFen,n.type,n.merchant,n.note,n.refund,"pending","")
     @Test fun parserIgnoresChatAndAmbiguousAmountsNeverAutoBook() {

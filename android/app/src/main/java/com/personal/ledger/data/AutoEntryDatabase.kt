@@ -14,6 +14,7 @@ data class PaymentCandidate(@PrimaryKey val id: String, val databaseName: String
 data class MerchantCategory(val databaseName: String,val owner: String,val platform: String,val merchant: String,val type: String,val categoryId: String)
 
 @Dao interface AutoEntryDao {
+    @Query("SELECT COUNT(*) FROM payment_candidates WHERE status='pending'") fun pendingCount(): Flow<Int>
     @Query("SELECT * FROM payment_candidates ORDER BY receivedAt DESC") fun candidates(): Flow<List<PaymentCandidate>>
     @Query("SELECT * FROM payment_candidates WHERE id=:id") suspend fun candidate(id: String): PaymentCandidate?
     @Insert(onConflict=OnConflictStrategy.IGNORE) suspend fun insert(candidate: PaymentCandidate): Long

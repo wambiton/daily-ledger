@@ -120,7 +120,8 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                     val budgetPlans by vm.budgets.collectAsStateWithLifecycle()
                     HomeDashboard(vm.owner, entries, categories, budgetPlans, budgetAlerts.size,
                         onBudget={route="budget"}, onCalendar={route="calendar"}, onSearch={route="search"},
-                        onEntry={detailFromSearch=false;detailFromCalendar=false;detailId=it.id;route="detail"})
+                        onEntry={detailFromSearch=false;detailFromCalendar=false;detailId=it.id;route="detail"},
+                        automaticStatus={ AutoCaptureStatus { route="automatic" } })
                 } else if(tab == 1) {
                     screenState.SaveableStateProvider("comparison") {
                         ComparisonScreen(entries, categories) { detailFromCalendar=false; detailFromSearch = false; detailId = it.id; route = "detail" }

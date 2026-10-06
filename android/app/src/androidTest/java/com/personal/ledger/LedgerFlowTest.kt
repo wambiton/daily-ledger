@@ -36,6 +36,17 @@ class LedgerFlowTest {
         // Keep the fixture database for inspection; only retire its scheduled jobs.
     }
 
+    @Test fun homeAutomaticStatusOpensAndReturnsWithoutChangingCaptureSettings() {
+        val before=com.personal.ledger.data.AutoCapture.prefs(app).all
+        ui.onNodeWithTag("home-auto-status").assertIsDisplayed().performClick()
+        ui.onNodeWithTag("auto-list").assertIsDisplayed()
+        ui.onNodeWithText("返回").performClick()
+        ui.onNodeWithTag("home-auto-status").assertIsDisplayed()
+        val after=com.personal.ledger.data.AutoCapture.prefs(app).all
+        for(key in listOf("enabled","database","owner","label","started_at")) {
+            Assert.assertEquals(before[key],after[key])
+        }
+    }
     @Test fun expenseCreateEditAndDelete() {
         ui.onNodeWithTag("new-entry").performClick()
         ui.onNodeWithTag("amount").assertDoesNotExist()

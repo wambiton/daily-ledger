@@ -86,7 +86,8 @@ import java.time.format.DateTimeFormatter
                 context.startActivity(intent)
             }) {Text("打开应用后台设置")}
             OutlinedButton(onClick={context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))}) {Text("打开电池优化设置")}
-            Text("realme：在应用耗电或电池管理中允许后台活动；如有自启动选项，也请允许。若划掉后仍断开，可在最近任务中锁定本应用。具体名称以系统为准。不要点“强行停止”，之后需手动打开一次。",style=MaterialTheme.typography.bodySmall)
+            Text("realme GT7 需分别设置：① 应用详情 → 耗电管理 → 完全允许后台行为；② 系统设置 → 应用 → 自启动 → 开启个人记账。电池优化已豁免不代表已允许自启动。其他机型以系统实际选项为准。",style=MaterialTheme.typography.bodySmall)
+            Text("重启并解锁后可能需要等待系统连接。若划掉后仍断开，可在最近任务中锁定本应用。不要点“强行停止”，之后需手动打开一次。",style=MaterialTheme.typography.bodySmall)
             Text("最近连接：${whenText(prefs.getLong("connected_at",0))}；最近断开：${whenText(prefs.getLong("disconnected_at",0))}",style=MaterialTheme.typography.bodySmall)
             Text("最近重连请求：${whenText(prefs.getLong("reconnect_at",0))}；请求不代表已经连接。断开期间漏掉的通知无法保证补回。",style=MaterialTheme.typography.bodySmall)
             prefs.getString("connection_error",null)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
@@ -98,10 +99,10 @@ import java.time.format.DateTimeFormatter
             listOf("微信","支付宝").forEach {platform ->
                 Text("$platform：应用通知 ${whenText(prefs.getLong("seen_$platform",0))}；支付识别 ${whenText(prefs.getLong("recognized_$platform",0))}",style=MaterialTheme.typography.bodySmall)
             }
-            prefs.getString("error",null)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-            error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             Text("待确认和商户规则仅在本手机保存；正式入账后随原有账号备份。",style=MaterialTheme.typography.bodySmall)
             }
+            prefs.getString("error",null)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
+            error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             Text("首次商户或信息不完整时需确认，待确认项不计入统计。",style=MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected=!history,onClick={history=false},label={Text("待确认（${rows.count{it.status=="pending"}}）")})

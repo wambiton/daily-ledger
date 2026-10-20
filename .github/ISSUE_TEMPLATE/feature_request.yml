@@ -1,0 +1,25 @@
+name: 功能建议
+description: 告诉我哪里不方便，以及希望如何改进
+title: "[建议] "
+body:
+  - type: markdown
+    attributes:
+      value: 感谢分享建议！不用懂编程，描述实际使用场景即可。这里的内容公开可见，请不要提供个人账目信息。
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你在什么场景下遇到了不便？
+      placeholder: 例如：比较几个月开销时，需要反复调整月份。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望怎样改进？
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 目前如何处理？（可选）
+      description: 可以说明现在的操作方式，或附上不包含个人信息的示意图。

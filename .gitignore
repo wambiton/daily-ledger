@@ -38,3 +38,7 @@ desktop/dist/
 用户体验/主题版-0.7.2/
 用户体验/新版首页-0.7.3/
 用户体验/冬日视觉修复-0.7.4/
+
+# Shared exclusions for distributable bundles and Kotlin caches
+**/.kotlin/
+用户体验/*/

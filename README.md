@@ -11,7 +11,7 @@ Android 本地记账 · 多周期比较 · 预算提醒 · 自己电脑上的备
 ![Storage](https://img.shields.io/badge/Storage-Room-4775D1)
 ![Status](https://img.shields.io/badge/Status-持续开发中-F0A44B)
 
-[下载安装](#下载安装) · [功能介绍](#功能介绍) · [快速开始](#快速开始) · [开发文档](#开发文档) · [反馈问题](https://github.com/wambiton/daliy-app/issues/new/choose)
+[下载安装](#下载安装) · [界面预览](#界面预览) · [功能介绍](#功能介绍) · [快速开始](#快速开始) · [开发文档](#开发文档) · [反馈问题](https://github.com/wambiton/daliy-app/issues/new/choose)
 
 </div>
 
@@ -45,6 +45,31 @@ Android 本地记账 · 多周期比较 · 预算提醒 · 自己电脑上的备
 [查看发布页与全部附件](https://github.com/wambiton/daliy-app/releases/tag/v0.7.10) · [安装说明](https://github.com/wambiton/daliy-app/releases/download/v0.7.10/INSTALL.md) · [SHA-256 校验文件](https://github.com/wambiton/daliy-app/releases/download/v0.7.10/SHA256SUMS.txt)
 
 > 当前为试用发布，手机 APK 使用调试签名。手机 0.7.10 与电脑 0.7.0 是本次配套组合。升级请保留原有数据，不要先卸载手机应用；电脑 ZIP 中的 `_internal` 文件夹必须与 EXE 一起保留。银行短信自动记账尚未接入。
+
+## 界面预览
+
+以下为 **0.7.10 现有界面组件在真机独立测试页面中的截图**。金额、分类和备注全部使用模拟数据；未展示真实账号、系统通知或完整应用导航。点击图片可查看原图。
+
+<table>
+  <tr>
+    <th>简洁首页</th>
+    <th>冬日主题</th>
+  </tr>
+  <tr>
+    <td><a href="docs/images/home-default.png"><img src="docs/images/home-default.png" alt="模拟账目的默认首页：收支汇总、预算和今日账目" width="300"></a></td>
+    <td><a href="docs/images/home-winter.png"><img src="docs/images/home-winter.png" alt="同一组模拟账目在冬日主题下的首页" width="300"></a></td>
+  </tr>
+  <tr>
+    <th>收支比较</th>
+    <th>预算计划</th>
+  </tr>
+  <tr>
+    <td><a href="docs/images/comparison.png"><img src="docs/images/comparison.png" alt="模拟账目两周支出比较与差额" width="300"></a></td>
+    <td><a href="docs/images/budget.png"><img src="docs/images/budget.png" alt="模拟预算计划的额度、支出和剩余金额" width="300"></a></td>
+  </tr>
+</table>
+
+[截图来源与复现说明](docs/界面截图说明.md)。当前版本预算百分比在首页与预算页的取整方式不同，本例显示为9%与8%；金额一致，已记录待统一。
 
 ## 功能介绍
 

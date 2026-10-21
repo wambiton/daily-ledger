@@ -114,7 +114,7 @@ def main():
                                 return
                     except Exception: pass
             threading.Thread(target=allow_notification,daemon=True).start()
-            result = subprocess.run([adb,'-s',serial,'shell','am','instrument','-w','-e','notClass','com.personal.ledger.ExternalBackupFlowTest','-e','backup_email',email,'-e','waiting_email',waiting_email,'-e','register_email',register_email,'-e','register_code',register_code,
+            result = subprocess.run([adb,'-s',serial,'shell','am','instrument','-w','-e','notClass','com.personal.ledger.ExternalBackupFlowTest,com.personal.ledger.ShowcaseCaptureTest','-e','backup_email',email,'-e','waiting_email',waiting_email,'-e','register_email',register_email,'-e','register_code',register_code,
                 '-e','old_email',old_email,'-e','reset_email',reset_email,'com.personal.ledger.test/androidx.test.runner.AndroidJUnitRunner'],capture_output=True,timeout=240)
             permission_stop.set()
             output = result.stdout.decode('utf-8',errors='replace')

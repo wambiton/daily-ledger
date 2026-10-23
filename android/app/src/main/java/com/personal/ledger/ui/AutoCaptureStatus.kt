@@ -41,8 +41,13 @@ internal fun captureStatusText(enabled: Boolean, granted: Boolean, hasTarget: Bo
     val countFlow = remember(context) { AutoEntryDatabase.get(context).auto().pendingCount() }
     val pending by countFlow.collectAsStateWithLifecycle(initialValue = -1)
     val status = remember(tick, connected) {
-        captureStatusText(prefs.getBoolean("enabled", false), AutoCaptureRecovery.granted(context),
-            AutoCapture.target(context) != null, connected)
+        val enabled=prefs.getBoolean("enabled", false)
+        val target=AutoCapture.target(context)!=null
+        when {
+            enabled && target && prefs.getBoolean("sms_enabled",false) && !BankSmsReceiver.granted(context) -> CaptureStatusText("自动记账 · 短信权限未开启",true)
+            enabled && target && BankSmsReceiver.enabled(context) && !connected -> CaptureStatusText("银行短信已启用 · 支付通知未连接",true)
+            else -> captureStatusText(enabled, AutoCaptureRecovery.granted(context),target,connected)
+        }
     }
     AutoCaptureStatusRow(status, pending, onOpen)
 }

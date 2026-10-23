@@ -120,7 +120,7 @@ def main():
             output = result.stdout.decode('utf-8',errors='replace')
             (private / 'account-device-latest.txt').write_text(output, encoding='utf-8')
             print(output)
-            if result.returncode or 'OK (32 tests)' not in output or 'FAILURES' in output:
+            if result.returncode or 'OK (33 tests)' not in output or 'FAILURES' in output:
                 raise RuntimeError('Device suite failed')
             assert not old_uploads, 'Legacy service must be blocked before upload'
         finally:

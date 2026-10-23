@@ -23,15 +23,23 @@ object AutoCapture {
         val p=prefs(context);val db=p.getString("database","").orEmpty();val owner=p.getString("owner","").orEmpty()
         return if(validName(db)&&owner.isNotBlank()) Triple(db,owner,p.getString("label","指定账本").orEmpty()) else null
     }
+    fun enqueue(context: Context,n: PaymentNotice,target: Triple<String,String,String>): Operation {
+        val input=workDataOf("id" to n.id,"db" to target.first,"owner" to target.second,"label" to target.third,
+            "platform" to n.platform,"date" to n.date,"amount" to (n.amountFen ?: -1),"type" to (n.type ?: ""),"merchant" to n.merchant,
+            "note" to n.note,"refund" to n.refund,"excluded" to n.excluded,"uncertain" to n.uncertain,
+            "source" to n.source,"transactionAt" to n.transactionAt,"channel" to n.channel,"cardTail" to n.cardTail)
+        return WorkManager.getInstance(context).enqueueUniqueWork("payment-notice/${n.id}",ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<AutoCaptureWorker>().setInputData(input).build())
+    }
     fun notify(context: Context,c: PaymentCandidate) {
         val manager=context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("ledger-auto","自动记账结果",NotificationManager.IMPORTANCE_DEFAULT))
         if(!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val intent=Intent(context,MainActivity::class.java).setAction("com.personal.ledger.AUTO_ENTRY").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val pending=PendingIntent.getActivity(context,8100,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val text=if(c.status=="booked") "${c.platform}账目已保存到${c.bookLabel}，点击检查或修改" else "${c.platform}支付信息待确认，尚未计入统计和预算"
+        val text=if(c.status=="merged") "已与另一条支付来源合并，仅计一笔；点击检查或拆分" else if(c.status=="booked") "${c.platform}账目已保存到${c.bookLabel}，点击检查或修改" else "${c.platform}支付信息待确认，尚未计入统计和预算"
         try { manager.notify(c.id,8100,NotificationCompat.Builder(context,"ledger-auto").setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(if(c.status=="booked") "已自动记账" else "待确认账目").setContentText(text)
+            .setContentTitle(if(c.status=="merged") "已合并重复来源" else if(c.status=="booked") "已自动记账" else "待确认账目").setContentText(text)
             .setContentIntent(pending).setAutoCancel(true).build()) } catch(_: SecurityException) {}
     }
 }
@@ -70,14 +78,17 @@ class AutoCaptureService: NotificationListenerService() {
         val extras=sbn.notification.extras
         val title=extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val text=extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.takeIf{it.isNotBlank()}
+            ?: extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.map {it.toString()}?.distinct()?.joinToString("\n")?.takeIf {it.isNotBlank()}
             ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
-        val n=PaymentNoticeParser.parse(sbn.packageName,sbn.key,sbn.postTime,title,text) ?: return
-        p.edit().putLong("recognized_$platform",System.currentTimeMillis()).apply()
-        val input=workDataOf("id" to n.id,"db" to target.first,"owner" to target.second,"label" to target.third,
-            "platform" to n.platform,"date" to n.date,"amount" to (n.amountFen ?: -1),"type" to (n.type ?: ""),"merchant" to n.merchant,
-            "note" to n.note,"refund" to n.refund,"excluded" to n.excluded,"uncertain" to n.uncertain)
-        WorkManager.getInstance(this).enqueueUniqueWork("payment-notice/${n.id}",ExistingWorkPolicy.KEEP,
-            OneTimeWorkRequestBuilder<AutoCaptureWorker>().setInputData(input).build())
+        val n=PaymentNoticeParser.parse(sbn.packageName,sbn.key,sbn.postTime,title,text)
+        if(n==null) {
+            p.edit().putLong("unmatched_$platform",System.currentTimeMillis())
+                .putString("reason_$platform",if(text.isBlank()) "通知正文为空或被隐藏" else "未匹配明确支付模板；可能为普通消息，未保存原文").apply()
+            return
+        }
+        p.edit().putLong("recognized_$platform",System.currentTimeMillis())
+            .putString("reason_$platform",if(n.uncertain) "已识别支付信息，但金额或收支方向不明确，请查看待确认" else "已识别并交给入账队列；结果见待确认或已处理记录").apply()
+        AutoCapture.enqueue(this,n,target)
     }
 }
 
@@ -85,13 +96,13 @@ class AutoCaptureWorker(context: Context,params: WorkerParameters): CoroutineWor
     override suspend fun doWork(): Result {
         fun text(key: String)=inputData.getString(key).orEmpty()
         val name=text("db");if(!AutoCapture.validName(name)) return Result.failure()
-        val n=PaymentNotice(text("id"),text("platform"),text("date"),inputData.getLong("amount",-1).takeIf{it>0},text("type").takeIf{it.isNotEmpty()},text("merchant"),text("note"),inputData.getBoolean("refund",false),inputData.getBoolean("excluded",false),inputData.getBoolean("uncertain",true))
-        val c=PaymentCandidate(n.id,name,text("owner"),text("label"),n.platform,n.date,n.amountFen,n.type,n.merchant,n.note,n.refund,"pending","")
+        val n=PaymentNotice(text("id"),text("platform"),text("date"),inputData.getLong("amount",-1).takeIf{it>0},text("type").takeIf{it.isNotEmpty()},text("merchant"),text("note"),inputData.getBoolean("refund",false),inputData.getBoolean("excluded",false),inputData.getBoolean("uncertain",true),source=text("source").ifEmpty {"notification"},transactionAt=inputData.getLong("transactionAt",0),channel=text("channel"),cardTail=text("cardTail"))
+        val c=PaymentCandidate(n.id,name,text("owner"),text("label"),n.platform,n.date,n.amountFen,n.type,n.merchant,n.note,n.refund,"pending","",source=n.source,transactionAt=n.transactionAt,channel=n.channel,cardTail=n.cardTail)
         val inbox=AutoEntryDatabase.get(applicationContext)
         if(!applicationContext.getDatabasePath(name).exists()) {
             inbox.auto().insert(c.copy(reason="原指定账本暂不可用，请保留此记录并恢复账本"));return Result.success()
         }
-        if(!AutoCapture.prefs(applicationContext).getBoolean("enabled",false)) {
+        if(!AutoCapture.prefs(applicationContext).getBoolean("enabled",false) || n.source=="sms" && !BankSmsReceiver.enabled(applicationContext)) {
             inbox.auto().insert(c.copy(reason="接收后已关闭自动记账，请手动确认"));return Result.success()
         }
         val ledger=LedgerDatabases.acquire(applicationContext,name)

@@ -42,12 +42,18 @@ import java.time.format.DateTimeFormatter
     val connected by AutoCaptureService.connected.collectAsStateWithLifecycle()
     val granted=remember(tick){AutoCaptureRecovery.granted(context)}
     val enabled=remember(tick){prefs.getBoolean("enabled",false)}
+    val smsGranted=remember(tick){BankSmsReceiver.granted(context)}
+    val smsEnabled=remember(tick){prefs.getBoolean("sms_enabled",false)}
+    val smsPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){allowed ->
+        if(allowed) prefs.edit().putBoolean("sms_enabled",true).putLong("sms_started_at",System.currentTimeMillis()).apply()
+        tick++
+    }
     val target=remember(tick){AutoCapture.target(context)}
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){tick++}
     LaunchedEffect(Unit){while(true){tick++;delay(1500)}}
     LaunchedEffect(granted,enabled){AutoCaptureRecovery.sync(context,"自动记账设置")}
     if(review!=null) {
-        key(review!!.candidate.id) {AutoEntryReview(review!!,busy,error,{vm.review.value=null},{type,category,amount,date,note,remember,replace->vm.save(type,category,amount,date,note,remember,replace)},{vm.ignore(review!!.candidate.id)})}
+        key(review!!.candidate.id) {AutoEntryReview(review!!,busy,error,{vm.review.value=null},{type,category,amount,date,note,remember,replace->vm.save(type,category,amount,date,note,remember,replace)},{vm.ignore(review!!.candidate.id)},{vm.split(it)})}
         return
     }
     fun whenText(time: Long)=if(time<=0) "尚无" else Instant.ofEpochMilli(time).atZone(Rules.zone).format(DateTimeFormatter.ofPattern("MM-dd HH:mm:ss"))
@@ -55,18 +61,36 @@ import java.time.format.DateTimeFormatter
         item {
             Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Text(if(!enabled) "自动记账已关闭" else if(granted && connected) "已连接 · 后台识别中" else "需要处理 · 通知未连接",style=MaterialTheme.typography.titleMedium)
+                    Text(if(!enabled) "自动记账已关闭" else if(granted && connected) "已连接 · 后台识别中" else if(smsEnabled && smsGranted) "银行短信已启用 · 支付通知未连接" else "需要处理 · 通知未连接",style=MaterialTheme.typography.titleMedium)
                     Text("固定目标：${target?.third ?: "尚未指定账本"}",modifier=Modifier.testTag("auto-target"))
             Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text("自动记账")
                 Switch(checked=enabled,onCheckedChange={value ->
                     prefs.edit().putBoolean("enabled",value).putLong("started_at",System.currentTimeMillis()).apply()
                     AutoCaptureRecovery.sync(context,if(value) "开启自动记账" else "关闭自动记账");tick++
-                },enabled=(!busy && (enabled || granted&&target!=null)),modifier=Modifier.testTag("auto-enabled"))
+                },enabled=(!busy && (enabled || (granted || smsEnabled&&smsGranted)&&target!=null)),modifier=Modifier.testTag("auto-enabled"))
             }
                     TextButton(onClick={choose=true},enabled=!busy) {Text("选择自动记账账本")}
                 }
             }
+            Card(Modifier.fillMaxWidth()) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                Text("银行短信自动记账",style=MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                    Text(if(smsEnabled && smsGranted) "短信识别已启用" else if(smsEnabled) "短信权限未授权" else "短信识别未开启")
+                    Switch(checked=smsEnabled,onCheckedChange={value ->
+                        if(!value) prefs.edit().putBoolean("sms_enabled",false).apply()
+                        else if(smsGranted) prefs.edit().putBoolean("sms_enabled",true).putLong("sms_started_at",System.currentTimeMillis()).apply()
+                        else smsPermission.launch(Manifest.permission.RECEIVE_SMS)
+                        tick++
+                    },enabled=!busy,modifier=Modifier.testTag("sms-enabled"))
+                }
+                if(smsEnabled && !smsGranted) TextButton(onClick={smsPermission.launch(Manifest.permission.RECEIVE_SMS)}) {Text("允许接收新短信")}
+                if(!enabled) Text("还需开启上方自动记账总开关并指定账本")
+                Text("目前适配招商银行95555的新交易短信，不读取历史短信；验证码和普通短信不保存。系统未送达短信时无法识别。")
+                Text("普通消费、存入和退款自动入账；未知分类使用其他支出/其他收入。充值、提现、明确本人互转不计收支。")
+                Text("同一账本内，银行卡短信与微信/支付宝通知按渠道、金额、收支及5分钟时间窗口自动配对，仅计一笔；已处理记录中可查看来源和拆分。相近的不同交易仍可能误合并，请核对。")
+                Text("最近识别银行短信：${whenText(prefs.getLong("recognized_sms",0))}",style=MaterialTheme.typography.bodySmall)
+            }}
             TextButton(onClick={settingsExpanded=!settingsExpanded},modifier=Modifier.testTag("auto-settings-toggle")) {
                 Text(if(settingsExpanded) "收起连接与后台设置" else "连接与后台设置  ›")
             }
@@ -98,8 +122,9 @@ import java.time.format.DateTimeFormatter
             Text("系统权限会向软件提供通知；软件只筛选微信、支付宝支付信息，不保存普通聊天原文。关闭开关后停止接收。",style=MaterialTheme.typography.bodySmall)
             listOf("微信","支付宝").forEach {platform ->
                 Text("$platform：应用通知 ${whenText(prefs.getLong("seen_$platform",0))}；支付识别 ${whenText(prefs.getLong("recognized_$platform",0))}",style=MaterialTheme.typography.bodySmall)
+                Text(prefs.getString("reason_$platform",null) ?: "尚无可判断的新通知；应用内账单不等于系统通知",style=MaterialTheme.typography.bodySmall)
             }
-            Text("待确认和商户规则仅在本手机保存；正式入账后随原有账号备份。",style=MaterialTheme.typography.bodySmall)
+            Text("来源、合并关系、待确认和商户规则仅在本手机保存；正式入账后随原有账号备份。",style=MaterialTheme.typography.bodySmall)
             }
             prefs.getString("error",null)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
@@ -117,7 +142,7 @@ import java.time.format.DateTimeFormatter
                 Text("目标：${c.bookLabel}")
                 Text(c.reason)
                 if(c.merchant.isNotEmpty()) Text(c.merchant)
-                if(c.status!="ignored") OutlinedButton(onClick={vm.open(c)},enabled=!busy,modifier=Modifier.testTag("auto-review-${c.id}")) {Text(if(c.status=="booked") "查看或修改账目" else "确认这笔账目")}
+                if(c.status!="ignored") OutlinedButton(onClick={vm.open(c)},enabled=!busy,modifier=Modifier.testTag("auto-review-${c.id}")) {Text(if(c.status=="booked" || c.status=="merged") "查看账目与来源" else "确认这笔账目")}
             }}
         }
     }
@@ -135,8 +160,9 @@ import java.time.format.DateTimeFormatter
 }
 
 @Composable fun AutoEntryReview(review: AutoEntryViewModel.Review,busy: Boolean,error: String?,cancel: ()->Unit,
-    save: (String,String,String,String,String,Boolean,String?)->Unit,ignore: ()->Unit) {
+    save: (String,String,String,String,String,Boolean,String?)->Unit,ignore: ()->Unit,split: (String)->Unit = {}) {
     val c=review.candidate
+    var splitId by remember {mutableStateOf<String?>(null)}
     var type by rememberSaveable{mutableStateOf(review.entry?.type ?: c.type ?: "expense")}
     var category by rememberSaveable{mutableStateOf(review.entry?.categoryId ?: if(c.refund) review.categories.firstOrNull{it.name=="退款"&&it.type=="income"}?.id.orEmpty() else "")}
     var amount by rememberSaveable{mutableStateOf((review.entry?.amountFen ?: c.amountFen)?.let{Rules.money(it)}.orEmpty())}
@@ -146,6 +172,14 @@ import java.time.format.DateTimeFormatter
     var replace by rememberSaveable{mutableStateOf<String?>(null)}
     LazyColumn(Modifier.fillMaxSize().testTag("auto-review"),verticalArrangement=Arrangement.spacedBy(10.dp),contentPadding=PaddingValues(bottom=24.dp)) {
         item {Text("${c.bookLabel} · ${if(c.status=="pending") "确认后才入账" else "修改已入账记录"}",style=MaterialTheme.typography.titleLarge);Text(c.reason)}
+        if(review.sources.size>1) item {
+            Text("识别来源（合并账目只计一笔）",style=MaterialTheme.typography.titleMedium)
+            review.sources.forEach {source ->
+                Text("${source.platform} · ${source.date} · ${source.amountFen?.let {Rules.money(it)} ?: "待确认"}")
+                Text(source.note,style=MaterialTheme.typography.bodySmall)
+                if(source.status=="merged") OutlinedButton(onClick={splitId=source.id},enabled=!busy,modifier=Modifier.testTag("split-source-${source.id}")) {Text("这不是同一笔，拆分此来源")}
+            }
+        }
         item {Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("expense" to "支出","income" to "收入").forEach{(value,label)->FilterChip(selected=type==value,onClick={type=value;category="";replace=null},enabled=!busy,label={Text(label)})}}}
         item {OutlinedTextField(amount,{amount=it;replace=null},label={Text("金额（元）")},enabled=!busy,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth().testTag("auto-amount"))}
         item {OutlinedTextField(date,{date=it;replace=null},label={Text("日期（YYYY-MM-DD）")},enabled=!busy,modifier=Modifier.fillMaxWidth())}
@@ -165,9 +199,14 @@ import java.time.format.DateTimeFormatter
         }
         item {
             error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-            Button(onClick={save(type,category,amount,date,note,rememberMerchant,replace)},enabled=!busy&&category.isNotEmpty()&&amount.isNotBlank(),modifier=Modifier.fillMaxWidth().testTag("auto-confirm")) {Text(if(c.status=="booked") "保存修改" else if(replace!=null) "旧账移入回收站并确认新账" else if(review.matches.isNotEmpty()) "确认新增，保留两笔" else "确认入账")}
+            Button(onClick={save(type,category,amount,date,note,rememberMerchant,replace)},enabled=!busy&&category.isNotEmpty()&&amount.isNotBlank(),modifier=Modifier.fillMaxWidth().testTag("auto-confirm")) {Text(if(c.status=="booked" || c.status=="merged") "保存修改" else if(replace!=null) "旧账移入回收站并确认新账" else if(review.matches.isNotEmpty()) "确认新增，保留两笔" else "确认入账")}
             if(c.status=="pending") OutlinedButton(onClick=ignore,enabled=!busy,modifier=Modifier.fillMaxWidth()) {Text("不入账，保留原有账目")}
             TextButton(onClick=cancel,enabled=!busy){Text("返回列表")}
         }
     }
+    if(splitId!=null) AlertDialog(onDismissRequest={splitId=null},title={Text("拆分为两笔账目？")},
+        text={Text("保留原账目，并根据这条来源新增一笔，两笔都会计入统计和预算。仅在它们确实是不同交易时确认。")},
+        confirmButton={TextButton(onClick={val id=splitId!!;splitId=null;split(id)},enabled=!busy){Text("确认拆分，保留两笔")}},
+        dismissButton={TextButton(onClick={splitId=null}){Text("取消")}})
+
 }

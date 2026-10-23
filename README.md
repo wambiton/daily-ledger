@@ -11,7 +11,7 @@ Android 本地记账 · 多周期比较 · 预算提醒 · 自己电脑上的备
 ![Storage](https://img.shields.io/badge/Storage-Room-4775D1)
 ![Status](https://img.shields.io/badge/Status-持续开发中-F0A44B)
 
-[下载安装](#下载安装) · [界面预览](#界面预览) · [功能介绍](#功能介绍) · [快速开始](#快速开始) · [开发文档](#开发文档) · [反馈问题](https://github.com/wambiton/daliy-app/issues/new/choose)
+[下载安装](#下载安装) · [界面预览](#界面预览) · [功能介绍](#功能介绍) · [快速开始](#快速开始) · [开发文档](#开发文档) · [反馈问题](https://github.com/wambiton/daily-ledger/issues/new/choose)
 
 </div>
 
@@ -25,7 +25,7 @@ Android 本地记账 · 多周期比较 · 预算提醒 · 自己电脑上的备
 
 这是一个由日常需求出发、持续改进的个人项目，目前希望邀请少量用户试用，重点收集**记账是否顺手、自动记账是否漏记、电脑备份是否清楚可靠**的反馈。不需要懂编程，也欢迎只反馈一个不方便的地方。
 
-**[下载手机与电脑端](#下载安装) · [报告问题](https://github.com/wambiton/daliy-app/issues/new?template=bug_report.yml) · [提出功能建议](https://github.com/wambiton/daliy-app/issues/new?template=feature_request.yml)**
+**[下载手机与电脑端](#下载安装) · [报告问题](https://github.com/wambiton/daily-ledger/issues/new?template=bug_report.yml) · [提出功能建议](https://github.com/wambiton/daily-ledger/issues/new?template=feature_request.yml)**
 
 第一次试用可按这个顺序：
 
@@ -39,10 +39,10 @@ Android 本地记账 · 多周期比较 · 预算提醒 · 自己电脑上的备
 
 | 平台 | 下载 | 版本与安装方式 |
 | :--- | :--- | :--- |
-| Android 手机 | [下载手机 APK](https://github.com/wambiton/daliy-app/releases/download/v0.7.10/PersonalLedger-Android-0.7.10.apk) | 0.7.10 · Android 8.0 及以上；已有用户覆盖安装 |
-| Windows 电脑 | [下载电脑端 ZIP](https://github.com/wambiton/daliy-app/releases/download/v0.7.10/PersonalLedger-Windows-0.7.0.zip) | 0.7.0 · 完整解压后运行 `LedgerBackup.exe` |
+| Android 手机 | [下载手机 APK](https://github.com/wambiton/daily-ledger/releases/download/v0.7.10/PersonalLedger-Android-0.7.10.apk) | 0.7.10 · Android 8.0 及以上；已有用户覆盖安装 |
+| Windows 电脑 | [下载电脑端 ZIP](https://github.com/wambiton/daily-ledger/releases/download/v0.7.10/PersonalLedger-Windows-0.7.0.zip) | 0.7.0 · 完整解压后运行 `LedgerBackup.exe` |
 
-[查看发布页与全部附件](https://github.com/wambiton/daliy-app/releases/tag/v0.7.10) · [安装说明](https://github.com/wambiton/daliy-app/releases/download/v0.7.10/INSTALL.md) · [SHA-256 校验文件](https://github.com/wambiton/daliy-app/releases/download/v0.7.10/SHA256SUMS.txt)
+[查看发布页与全部附件](https://github.com/wambiton/daily-ledger/releases/tag/v0.7.10) · [安装说明](https://github.com/wambiton/daily-ledger/releases/download/v0.7.10/INSTALL.md) · [SHA-256 校验文件](https://github.com/wambiton/daily-ledger/releases/download/v0.7.10/SHA256SUMS.txt)
 
 > 当前为试用发布，手机 APK 使用调试签名。手机 0.7.10 与电脑 0.7.0 是本次配套组合。升级请保留原有数据，不要先卸载手机应用；电脑 ZIP 中的 `_internal` 文件夹必须与 EXE 一起保留。银行短信自动记账尚未接入。
 

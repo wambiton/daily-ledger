@@ -34,6 +34,7 @@ import java.time.format.DateTimeFormatter
     var tick by remember {mutableIntStateOf(0)}
     var choose by remember {mutableStateOf(false)}
     var settingsExpanded by rememberSaveable {mutableStateOf(false)}
+    var diagnosticsExpanded by rememberSaveable {mutableStateOf(false)}
     var history by rememberSaveable {mutableStateOf(false)}
     val rows by vm.rows.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
@@ -61,8 +62,14 @@ import java.time.format.DateTimeFormatter
         item {
             Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Text(if(!enabled) "自动记账已关闭" else if(granted && connected) "已连接 · 后台识别中" else if(smsEnabled && smsGranted) "银行短信已启用 · 支付通知未连接" else "需要处理 · 通知未连接",style=MaterialTheme.typography.titleMedium)
+                    val health=captureStatusText(enabled,granted,target!=null,connected,smsEnabled,smsGranted)
+                    Text(health.title,style=MaterialTheme.typography.titleMedium)
+                    Text(health.guidance,style=MaterialTheme.typography.bodySmall)
                     Text("固定目标：${target?.third ?: "尚未指定账本"}",modifier=Modifier.testTag("auto-target"))
+                    Text("全手机待确认 ${rows.count{it.status=="pending"}} 笔 · 待确认不计入统计",style=MaterialTheme.typography.bodySmall)
+                    TextButton(onClick={diagnosticsExpanded=!diagnosticsExpanded},modifier=Modifier.testTag("capture-diagnostics-toggle")) {
+                        Text(if(diagnosticsExpanded) "收起漏记排查" else "查看接收与入账情况")
+                    }
             Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                 Text("自动记账")
                 Switch(checked=enabled,onCheckedChange={value ->
@@ -73,6 +80,19 @@ import java.time.format.DateTimeFormatter
                     TextButton(onClick={choose=true},enabled=!busy) {Text("选择自动记账账本")}
                 }
             }
+        }
+        if(diagnosticsExpanded) {
+            item {Text("漏记排查 · 本手机所有自动记账账本",style=MaterialTheme.typography.titleMedium)
+                Text("先看是否收到，再看是否识别，最后查看记录结果。支付宝应用内账单不等于系统通知。",style=MaterialTheme.typography.bodySmall)}
+            items(listOf("微信","支付宝","银行短信")) {source ->
+                val key=if(source=="银行短信") "sms" else source
+                val latest=rows.filter {if(key=="sms") it.source=="sms" else it.source=="notification"&&it.platform==source}.maxByOrNull {it.receivedAt}
+                CaptureSourceDiagnostics(source,prefs.getLong("seen_$key",0),prefs.getLong("recognized_$key",0),
+                    prefs.getString("reason_$key",null),latest,{vm.open(it)})
+            }
+            item {Text("未收到：检查来源应用通知、短信权限与后台限制。收到但未识别：可能为普通消息、隐藏金额或未适配模板。识别后没有对应记录：稍后刷新并检查处理错误；请先核对账本再手动补记。",style=MaterialTheme.typography.bodySmall)}
+        }
+        item {
             Card(Modifier.fillMaxWidth()) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                 Text("银行短信自动记账",style=MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {

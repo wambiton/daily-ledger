@@ -25,6 +25,15 @@ class AutoEntryFlowTest {
         ledger=Room.databaseBuilder(context,LedgerDatabase::class.java,"auto-ledger-${UUID.randomUUID()}.db").build()
     }
     @After fun close() {inbox.close();ledger.close()}
+    @Test fun diagnosticsKeepRecognizedMessageSeparateFromPendingAccounting() {
+        val c=PaymentCandidate("diagnostic","synthetic.db","a","原指定模拟账本","支付宝","2026-10-23",1230,"expense","测试店","模拟消息",false,"pending","分类尚未确认",receivedAt=1792713600000L)
+        var opened: PaymentCandidate?=null
+        ui.setContent {LedgerTheme {CaptureSourceDiagnostics("支付宝",c.receivedAt+1000,c.receivedAt+1000,"支付信息已识别",c,{opened=it})}}
+        ui.onNodeWithTag("capture-result-支付宝").assertTextEquals("最近记录结果：待确认，尚未计入统计")
+        ui.onNodeWithText("处理这笔待确认").performClick()
+        assertEquals(c,opened)
+        runBlocking {assertTrue(ledger.ledger().entrySnapshot("a").isEmpty())}
+    }
     @Test fun mergedBankAndAlipaySourcesCanBeSplitFromReview() {
         val now=System.currentTimeMillis()
         val sms=PaymentNotice("sms","招商银行短信","2026-10-22",1230,"expense","测试店","模拟短信",false,false,false,source="sms",transactionAt=now,channel="支付宝",cardTail="2468")

@@ -40,10 +40,13 @@ class LedgerFlowTest {
         val before=com.personal.ledger.data.AutoCapture.prefs(app).all
         ui.onNodeWithTag("home-auto-status").assertIsDisplayed().performClick()
         ui.onNodeWithTag("auto-list").assertIsDisplayed()
+        ui.onNodeWithTag("capture-diagnostics-toggle").performClick()
+        ui.onNodeWithTag("auto-list").performScrollToNode(hasTestTag("capture-source-支付宝"))
+        ui.onNodeWithTag("capture-source-支付宝").assertExists()
         ui.onNodeWithText("返回").performClick()
         ui.onNodeWithTag("home-auto-status").assertIsDisplayed()
         val after=com.personal.ledger.data.AutoCapture.prefs(app).all
-        for(key in listOf("enabled","database","owner","label","started_at")) {
+        for(key in listOf("enabled","database","owner","label","started_at","sms_enabled","sms_started_at")) {
             Assert.assertEquals(before[key],after[key])
         }
     }

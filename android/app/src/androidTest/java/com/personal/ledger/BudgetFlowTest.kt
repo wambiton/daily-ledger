@@ -73,6 +73,8 @@ class BudgetFlowTest {
         ui.onNodeWithTag("budget-category-${cat.id}").performTextInput("101")
         ui.onNodeWithTag("budget-editor").performScrollToNode(hasTestTag("save-budget"))
         ui.onNodeWithTag("save-budget").performClick()
+        // The new error line can be above the visible area after the keyboard/list resizes.
+        ui.onNodeWithTag("budget-editor").performScrollToNode(hasTestTag("budget-error"))
         ui.onNodeWithTag("budget-error").assertTextContains("不能超过总预算",substring=true)
         Assert.assertTrue(vm.budgets.value.isEmpty())
         ui.onNodeWithTag("budget-editor").performScrollToNode(hasTestTag("budget-category-${cat.id}"))

@@ -27,10 +27,16 @@ class BankSmsReceiver: BroadcastReceiver() {
         if(messages.isEmpty() || messages.size>20) return
         val sender=messages.first().originatingAddress ?: return
         if(messages.any {it.originatingAddress!=sender}) return
+        if(sender.trim().removePrefix("+86")!="95555") return
+        prefs.edit().putLong("seen_sms",received).apply()
         // Concatenate multipart segments before parsing; never retain unrelated or OTP text.
         val body=messages.joinToString("") {it.messageBody.orEmpty()}.take(2001)
-        val parsed=BankSmsParser.parse(sender,body,messages.first().timestampMillis,received) ?: return
-        prefs.edit().putLong("recognized_sms",received).apply()
+        val parsed=BankSmsParser.parse(sender,body,messages.first().timestampMillis,received)
+        if(parsed==null) {
+            prefs.edit().putString("reason_sms","最近收到95555消息，但未匹配支持的交易模板；可能为普通消息，未保存原文").apply()
+            return
+        }
+        prefs.edit().putLong("recognized_sms",received).putString("reason_sms","最近消息已识别为交易信息，实际结果请查看处理记录").apply()
         val pending=goAsync()
         thread(name="bank-sms-enqueue") {
             try { AutoCapture.enqueue(context.applicationContext,parsed.notice,target).result.get(8,TimeUnit.SECONDS) }

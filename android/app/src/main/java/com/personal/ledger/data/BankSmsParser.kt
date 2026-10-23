@@ -44,7 +44,8 @@ object BankSmsParser {
         // Keep transaction evidence only; balances and unrelated message text are not persisted.
         val note = "招商银行 · 尾号$card · $channel\n${transaction.toLocalDateTime()} · ${if(refund) "退款" else if(income) "收入" else "消费"} · $merchant"
         return BankSmsNotice(PaymentNotice(id, "招商银行短信", transaction.toLocalDate().toString(), amount,
-            type, merchant, note, refund, excluded, amount == null || type == null),
+            type, merchant, note, refund, excluded, amount == null || type == null,
+            source="sms", transactionAt=transaction.toInstant().toEpochMilli(), channel=channel, cardTail=card),
             transaction.toInstant().toEpochMilli(), channel, card)
     }
 }

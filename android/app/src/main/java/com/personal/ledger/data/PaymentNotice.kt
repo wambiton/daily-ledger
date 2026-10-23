@@ -6,7 +6,8 @@ import java.util.UUID
 
 data class PaymentNotice(val id: String, val platform: String, val date: String,
     val amountFen: Long?, val type: String?, val merchant: String, val note: String,
-    val refund: Boolean, val excluded: Boolean, val uncertain: Boolean)
+    val refund: Boolean, val excluded: Boolean, val uncertain: Boolean,
+    val source: String = "notification", val transactionAt: Long = 0, val channel: String = "", val cardTail: String = "")
 
 /** Only platform-shaped payment notices are candidates. Never store arbitrary chat text. */
 object PaymentNoticeParser {
@@ -33,6 +34,6 @@ object PaymentNoticeParser {
         val identity=if(order!=null) "$pkg|$order|$refund" else "$pkg|$key|$posted"
         val id=UUID.nameUUIDFromBytes(identity.toByteArray(Charsets.UTF_8)).toString()
         return PaymentNotice(id,platform,day,amount,type,merchant,("$platform · $title\n$text").take(500),refund,excluded,
-            amount==null || type==null || text.contains("转账") || text.contains("余额") || text.contains("汇总"))
+            amount==null || type==null || text.contains("转账") || text.contains("余额") || text.contains("汇总"), transactionAt=posted, channel=platform)
     }
 }

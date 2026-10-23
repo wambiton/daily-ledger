@@ -30,9 +30,13 @@ class PortableBackupTest {
         repo.delete(removed.id)
         return BackupStore(db,"source").export()
     }
+    private fun trashRow(payload: JSONObject): JSONObject {
+        val rows = payload.getJSONArray("entries")
+        return (0 until rows.length()).map {rows.getJSONObject(it)}.single {!it.isNull("deleted_at")}
+    }
     @Test fun appendPreservesTrashDeletionAndDuplicateChoice() = runBlocking {
         val payload = payload(); val store = BackupStore(db,"target")
-        val deleted = payload.getJSONArray("entries").getJSONObject(1).getLong("deleted_at")
+        val deleted = trashRow(payload).getLong("deleted_at")
         assertEquals(2,store.append(payload,"skip"))
         assertEquals(deleted,db.ledger().allEntries("target").single {it.deletedAt!=null}.deletedAt)
         assertEquals(2,store.preview(payload).duplicates)
@@ -50,7 +54,7 @@ class PortableBackupTest {
         broken.getJSONArray("entries").getJSONObject(1).put("amount_fen",1.5)
         assertTrue(runCatching {store.append(broken,"include")}.isFailure)
         assertEquals(before,db.ledger().allEntries("target"))
-        val expired = payload.getJSONArray("entries").getJSONObject(1)
+        val expired = trashRow(payload)
         val deletion = System.currentTimeMillis() - LedgerRepository.RETENTION_MS - 1
         expired.put("created_at",1).put("updated_at",deletion).put("deleted_at",deletion)
         assertEquals(1,store.preview(payload).expired)

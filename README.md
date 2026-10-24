@@ -39,12 +39,12 @@ Android 本地记账 · 多周期比较 · 预算提醒 · 自己电脑上的备
 
 | 平台 | 下载 | 版本与安装方式 |
 | :--- | :--- | :--- |
-| Android 手机 | [下载手机 APK](https://github.com/wambiton/daily-ledger/releases/download/v0.7.10/PersonalLedger-Android-0.7.10.apk) | 0.7.10 · Android 8.0 及以上；已有用户覆盖安装 |
-| Windows 电脑 | [下载电脑端 ZIP](https://github.com/wambiton/daily-ledger/releases/download/v0.7.10/PersonalLedger-Windows-0.7.0.zip) | 0.7.0 · 完整解压后运行 `LedgerBackup.exe` |
+| Android 手机 | [下载手机 APK](https://github.com/wambiton/daily-ledger/releases/download/v0.7.12/PersonalLedger-Android-0.7.12.apk) | 0.7.12 · Android 8.0 及以上；已有用户覆盖安装 |
+| Windows 电脑 | [下载电脑端 ZIP](https://github.com/wambiton/daily-ledger/releases/download/v0.7.12/PersonalLedger-Windows-0.7.0.zip) | 0.7.0 · 完整解压后运行 `LedgerBackup.exe` |
 
-[查看发布页与全部附件](https://github.com/wambiton/daily-ledger/releases/tag/v0.7.10) · [安装说明](https://github.com/wambiton/daily-ledger/releases/download/v0.7.10/INSTALL.md) · [SHA-256 校验文件](https://github.com/wambiton/daily-ledger/releases/download/v0.7.10/SHA256SUMS.txt)
+[查看发布页与全部附件](https://github.com/wambiton/daily-ledger/releases/tag/v0.7.12) · [安装说明](https://github.com/wambiton/daily-ledger/releases/download/v0.7.12/INSTALL.md) · [SHA-256 校验文件](https://github.com/wambiton/daily-ledger/releases/download/v0.7.12/SHA256SUMS.txt)
 
-> 当前为试用发布，手机 APK 使用调试签名。手机 0.7.10 与电脑 0.7.0 是本次配套组合。升级请保留原有数据，不要先卸载手机应用；电脑 ZIP 中的 `_internal` 文件夹必须与 EXE 一起保留。银行短信自动记账尚未接入。
+> 当前为试用发布，手机 APK 使用调试签名。手机 0.7.12 与电脑 0.7.0 是本次配套组合。升级请保留原有数据，不要先卸载手机应用；电脑 ZIP 中的 `_internal` 文件夹必须与 EXE 一起保留。银行短信支持已适配的招商银行95555模板；只处理开启后的新消息。
 
 ## 界面预览
 
@@ -85,7 +85,7 @@ Android 本地记账 · 多周期比较 · 预算提醒 · 自己电脑上的备
 | 自动记账 | 识别支持的微信、支付宝系统通知，提供待确认记录与连接状态 |
 | 外观主题 | 默认简洁主题与冬日主题，共用账本、比较和个人中心布局 |
 
-> 自动记账依赖系统实际发出的通知、通知使用权和手机后台设置，并不保证识别所有支付。银行短信识别与跨来源重复合并仍在开发，当前版本尚未接入。
+> 自动记账依赖系统实际发出的通知、通知使用权和手机后台设置，并不保证识别所有支付。已加入招商银行短信识别、跨来源合并与手动拆分，以及接收/识别/入账排查；真实模板覆盖仍需持续验证。
 
 ## 数据如何保存
 
@@ -161,7 +161,7 @@ reports/      阶段验收记录（私有诊断不上传）
 
 手机端当前版本标识为 `0.7.10-capture-status`。已实现首页自动记账状态展示；近期验收覆盖构建、单元测试与真机流程，具体数量和执行日期以开发进度为准，不将历史测试结果当作每次提交的结果。
 
-后续重点：银行短信识别、微信/支付宝与银行卡消息的重复合并，以及真实支付场景的持续验证。
+后续重点：扩展已验证的银行和支付消息模板，持续验证真实支付与误合并场景。
 
 ## 隐私与素材
 

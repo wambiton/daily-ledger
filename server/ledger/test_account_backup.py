@@ -152,6 +152,67 @@ class AccountBackupTests(TestCase):
         self.assertEqual(downloaded.json()['payload'], body['payload'])
         self.assertEqual(BackupHead.objects.get().revision, 1)
 
+    def test_history_cursor_and_version_download_preserve_all_snapshots(self):
+        token = self.account()['access_token']
+        headers = {'HTTP_AUTHORIZATION': 'Bearer ' + token}
+        original = self.payload()
+        for base in range(3):
+            payload = copy.deepcopy(original)
+            payload['entries'][0]['amount_fen'] += base
+            self.assertEqual(self.post('backup/', {'operation_id': str(uuid.uuid4()),
+                'base_revision': base, 'payload': payload}, token).status_code, 200)
+        before = list(BackupSnapshot.objects.order_by('revision').values())
+        page = self.client.get('/api/v1/backup/history/?limit=2', **headers).json()
+        self.assertEqual([item['revision'] for item in page['items']], [3, 2])
+        self.assertEqual(page['next_before'], 2)
+        self.assertEqual(page['items'][0]['date_from'], '2025-01-02')
+        self.assertNotIn('payload', page['items'][0])
+        old = self.client.get('/api/v1/backup/download/?revision=1', **headers)
+        self.assertEqual(old.json()['payload'], original)
+        self.assertEqual(self.client.get('/api/v1/backup/download/', **headers).json()['revision'], 3)
+        self.assertEqual(before, list(BackupSnapshot.objects.order_by('revision').values()))
+        self.assertEqual(BackupHead.objects.get().revision, 3)
+        self.post('backup/', {'operation_id': str(uuid.uuid4()), 'base_revision': 3,
+                             'payload': original}, token)
+        next_page = self.client.get('/api/v1/backup/history/?limit=2&before=2', **headers).json()
+        self.assertEqual([item['revision'] for item in next_page['items']], [1])
+        self.assertIsNone(next_page['next_before'])
+
+    def test_history_is_private_and_validates_queries(self):
+        token = self.account()['access_token']
+        other = self.account('999999@qq.com')['access_token']
+        self.post('backup/', {'operation_id': str(uuid.uuid4()), 'base_revision': 0,
+                             'payload': self.payload()}, token)
+        headers = {'HTTP_AUTHORIZATION': 'Bearer ' + other}
+        self.assertEqual(self.client.get('/api/v1/backup/history/').status_code, 401)
+        self.assertEqual(self.client.get('/api/v1/backup/history/', **headers).json(),
+                         {'items': [], 'next_before': None})
+        missing = self.client.get('/api/v1/backup/download/?revision=1', **headers)
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual(missing.json()['error']['code'], 'backup_not_found')
+        for path in ['history/?limit=0', 'history/?limit=51', 'history/?before=-1',
+                     'history/?before=', 'download/?revision=1&revision=2',
+                     'download/?revision=abc', 'download/?revision=9223372036854775808']:
+            response = self.client.get('/api/v1/backup/' + path, **headers)
+            self.assertEqual(response.status_code, 400, path)
+            self.assertEqual(response.json()['error']['code'], 'invalid_backup_query')
+            self.assertEqual(response.headers['Cache-Control'], 'no-store')
+
+    def test_history_summary_excludes_trash_from_date_range(self):
+        token = self.account()['access_token']
+        payload = self.payload()
+        payload['format_version'] = 2
+        payload['entries'][0]['deleted_at'] = 2
+        self.post('backup/', {'operation_id': str(uuid.uuid4()), 'base_revision': 0,
+                             'payload': payload}, token)
+        item = self.client.get('/api/v1/backup/history/',
+            HTTP_AUTHORIZATION='Bearer ' + token).json()['items'][0]
+        self.assertEqual(item['entry_count'], 0)
+        self.assertEqual(item['trash_count'], 1)
+        self.assertIsNone(item['date_from'])
+        self.assertIsNone(item['date_to'])
+        self.assertEqual(item['budget_count'], 0)
+
     def test_stale_device_cannot_overwrite_and_history_remains(self):
         token = self.account()['access_token']
         body = {'operation_id': str(uuid.uuid4()), 'base_revision': 0, 'payload': self.payload()}

@@ -122,10 +122,44 @@ def latest(request, data):
 
 @endpoint('GET', authenticated=True)
 def download(request, data):
-    snapshot = BackupSnapshot.objects.filter(user=request.ledger_user).order_by('-revision').first()
+    snapshots = BackupSnapshot.objects.filter(user=request.ledger_user)
+    revision = query_number(request, 'revision')
+    snapshot = (snapshots.filter(revision=revision) if revision is not None else snapshots).order_by('-revision').first()
     if snapshot is None:
+        if revision is not None:
+            raise ApiError('所选备份版本不存在，请刷新备份历史', 404, 'backup_not_found')
         raise ApiError('这个账号还没有电脑备份', 404, 'no_backup')
     return {**info(snapshot), 'payload': snapshot.payload}
+
+
+def query_number(request, name, default=None, maximum=9223372036854775807):
+    values = request.GET.getlist(name)
+    if not values:
+        return default
+    if len(values) != 1 or not values[0].isascii() or not values[0].isdigit() or len(values[0]) > 19:
+        raise ApiError('备份版本或分页参数不正确', 400, 'invalid_backup_query')
+    value = int(values[0])
+    if not 1 <= value <= maximum:
+        raise ApiError('备份版本或分页参数不正确', 400, 'invalid_backup_query')
+    return value
+
+
+@endpoint('GET', authenticated=True)
+def history(request, data):
+    # Revision cursor keeps subsequent pages stable when new backups arrive.
+    before = query_number(request, 'before')
+    limit = query_number(request, 'limit', default=20, maximum=50)
+    snapshots = BackupSnapshot.objects.filter(user=request.ledger_user)
+    if before is not None:
+        snapshots = snapshots.filter(revision__lt=before)
+    rows = list(snapshots.order_by('-revision')[:limit + 1])
+    items = []
+    for snapshot in rows[:limit]:
+        days = [entry['date'] for entry in snapshot.payload['entries'] if entry.get('deleted_at') is None]
+        items.append({**info(snapshot), 'date_from': min(days) if days else None,
+                      'date_to': max(days) if days else None,
+                      'budget_count': len(snapshot.payload.get('budgets', []))})
+    return {'items': items, 'next_before': rows[limit - 1].revision if len(rows) > limit else None}
 
 
 def validate_budgets(plans, categories):

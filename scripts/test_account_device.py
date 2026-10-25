@@ -34,6 +34,8 @@ def main():
         call_command('migrate', verbosity=0)
         email = 'device-' + uuid.uuid4().hex + '@qq.com'
         User.objects.create_user(username=uuid.uuid4().hex, email=email, password='12345678', verified_at=timezone.now())
+        history_email = 'history-' + uuid.uuid4().hex + '@qq.com'
+        User.objects.create_user(username=uuid.uuid4().hex, email=history_email, password='12345678', verified_at=timezone.now())
         waiting_email = 'waiting-' + uuid.uuid4().hex + '@qq.com'
         User.objects.create_user(username=uuid.uuid4().hex, email=waiting_email, password='12345678', verified_at=timezone.now())
         old_email = 'legacy-' + uuid.uuid4().hex + '@qq.com'
@@ -115,12 +117,12 @@ def main():
                     except Exception: pass
             threading.Thread(target=allow_notification,daemon=True).start()
             result = subprocess.run([adb,'-s',serial,'shell','am','instrument','-w','-e','notClass','com.personal.ledger.ExternalBackupFlowTest,com.personal.ledger.ShowcaseCaptureTest','-e','backup_email',email,'-e','waiting_email',waiting_email,'-e','register_email',register_email,'-e','register_code',register_code,
-                '-e','old_email',old_email,'-e','reset_email',reset_email,'com.personal.ledger.test/androidx.test.runner.AndroidJUnitRunner'],capture_output=True,timeout=240)
+                '-e','old_email',old_email,'-e','reset_email',reset_email,'-e','history_email',history_email,'com.personal.ledger.test/androidx.test.runner.AndroidJUnitRunner'],capture_output=True,timeout=240)
             permission_stop.set()
             output = result.stdout.decode('utf-8',errors='replace')
             (private / 'account-device-latest.txt').write_text(output, encoding='utf-8')
             print(output)
-            if result.returncode or 'OK (35 tests)' not in output or 'FAILURES' in output:
+            if result.returncode or 'OK (36 tests)' not in output or 'FAILURES' in output:
                 raise RuntimeError('Device suite failed')
             assert not old_uploads, 'Legacy service must be blocked before upload'
         finally:

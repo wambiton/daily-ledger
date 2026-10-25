@@ -203,6 +203,70 @@ class AccountBackupFlowTest {
             assertEquals(args.getString("reset_email"),vm.account.value!!.getJSONObject("user").getString("email"))
         } finally { holder.clear() }
     }
+    @Test fun historyNetworkPreviewRestoresChosenVersionWithoutChangingAccount() {
+        val args = InstrumentationRegistry.getArguments()
+        Assume.assumeTrue(args.containsKey("history_email"))
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val namespace = "history-network-${UUID.randomUUID()}"
+        val vm = BackupViewModel(app, namespace)
+        val holder = ViewModelStore().apply { put("vm", vm) }
+        try {
+            ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AccountScreen(vm) } } }
+            ui.runOnIdle { vm.signIn("http://127.0.0.1:8767", args.getString("history_email")!!, "12345678", "", "login") }
+            ui.waitUntil(30000) { !vm.busy.value }
+            val account = requireNotNull(vm.account.value) { vm.message.value }
+            val name = vm.databaseName(account)
+            val owner = account.getJSONObject("user").getString("id")
+            val client = ComputerPair.client(account)
+            val token = account.getString("access_token")
+            val db = LedgerDatabases.acquire(app, name)
+            try {
+                val original = runBlocking {
+                    val repo = LedgerRepository(db, owner); repo.seedDefaults()
+                    val category = db.ledger().categorySnapshot(owner).first { it.type == "expense" }
+                    val entry = repo.save(null, "expense", category.id, "12.34", LocalDate.of(2025, 1, 2), "history version one")
+                    val payload = BackupStore(db, owner).export()
+                    client.call("backup/", org.json.JSONObject().put("operation_id", UUID.randomUUID().toString())
+                        .put("base_revision", 0).put("payload", payload), token)
+                    repo.save(entry.id, "expense", category.id, "24.68", LocalDate.of(2025, 1, 2), "history version two")
+                    client.call("backup/", org.json.JSONObject().put("operation_id", UUID.randomUUID().toString())
+                        .put("base_revision", 1).put("payload", BackupStore(db, owner).export()), token)
+                    payload
+                }
+                val before = runBlocking { db.ledger().allEntries(owner) }
+                val pending = runBlocking { db.ledger().pending(owner) }
+                val state = runBlocking { db.ledger().backupState(owner) }
+                ui.onNodeWithTag("backup-history").performScrollTo().performClick()
+                ui.waitUntil(30000) { !vm.busy.value && vm.historyLoaded.value }
+                assertEquals(listOf(2L, 1L), vm.historyRows.value.map { it.getLong("revision") })
+                ui.onNodeWithTag("history-list").performScrollToNode(hasTestTag("history-revision-1"))
+                ui.onNodeWithTag("history-revision-1").performClick()
+                ui.waitUntil(30000) { !vm.busy.value && vm.historyPreview.value != null }
+                assertEquals(PortableSnapshot.parse(original, owner), PortableSnapshot.parse(vm.historyPreview.value!!.payload, owner))
+                assertTrue(vm.savedBooks.value.none { it.getString("database").startsWith("history-") })
+                ui.onNodeWithTag("history-list").performScrollToNode(hasTestTag("confirm-history-recovery"))
+                val image = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+                java.io.File(app.filesDir, "history-preview-test.png").outputStream().use {
+                    image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                }
+                image.recycle()
+                ui.onNodeWithTag("confirm-history-recovery").performClick()
+                ui.waitUntil(10000) { !vm.busy.value && vm.recoveredBook.value != null }
+                assertNull(vm.selectedBook.value)
+                assertEquals(name, vm.databaseName(vm.account.value!!))
+                assertEquals(before, runBlocking { db.ledger().allEntries(owner) })
+                assertEquals(pending, runBlocking { db.ledger().pending(owner) })
+                assertEquals(state, runBlocking { db.ledger().backupState(owner) })
+                assertEquals(2L, runBlocking { client.call("backup/latest/", token=token) }.getLong("revision"))
+                val book = requireNotNull(vm.recoveredBook.value)
+                val copyName = book.getString("database")
+                val copy = LedgerDatabases.acquire(app, copyName)
+                try { assertEquals(1234L, runBlocking { copy.ledger().allEntries(book.getString("owner")) }.single().amountFen) }
+                finally { LedgerDatabases.release(copyName) }
+                assertTrue(PhoneLedgers(app, namespace).books().any { it.getString("database") == copyName })
+            } finally { LedgerDatabases.release(name) }
+        } finally { holder.clear() }
+    }
     @Test fun loginUploadRestoreAndKeepOtherAccountIsolated() {
         val args = InstrumentationRegistry.getArguments()
         Assume.assumeTrue("Needs isolated local fixture server", args.containsKey("backup_email"))

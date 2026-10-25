@@ -11,6 +11,8 @@ import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -129,6 +131,8 @@ fun AccountScreen(vm: BackupViewModel) {
                 TextButton(onClick={ vm.selectAccountBook() },modifier=Modifier.testTag("return-account-book")) { Text("返回当前账号账本") }
             }
             OutlinedButton(onClick = { chooseImport = true }, enabled = !busy && !uploading, modifier = Modifier.fillMaxWidth().testTag("import-local")) { Text("从手机账本导入") }
+            OutlinedButton(onClick = { vm.openHistory() }, enabled = !busy && !uploading,
+                modifier = Modifier.fillMaxWidth().testTag("backup-history")) { Text("备份历史 / 恢复为独立账本") }
             if(uploading) OutlinedButton(onClick = { vm.cancelUpload() },modifier = Modifier.testTag("cancel-upload")) { Text("取消后台备份") }
             TextButton(onClick = { vm.logout() }, enabled = !busy) { Text("退出账号，查看原本机账本") }
         }
@@ -137,7 +141,7 @@ fun AccountScreen(vm: BackupViewModel) {
         if(message.isNotEmpty()) Text(message, modifier = Modifier.testTag("account-message"))
     }
     if(showBooks) AlertDialog(onDismissRequest={ showBooks=false },title={ Text("手机保存的账本") },
-        text={ Column {
+        text={ Column(Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState())) {
             Text("切换只改变当前查看的账本，不删除账目，不会自动上传。")
             TextButton(onClick={ vm.selectOriginalBook();showBooks=false },modifier=Modifier.testTag("choose-original-book")) { Text("原本机账本") }
             if(account!=null) TextButton(onClick={ vm.selectAccountBook();showBooks=false }) { Text("当前登录账号账本") }
@@ -150,4 +154,5 @@ fun AccountScreen(vm: BackupViewModel) {
         confirmButton={ TextButton(onClick={ vm.confirmPair() },enabled=!busy,modifier=Modifier.testTag("confirm-pair")) { Text("保留账本并连接") } },
         dismissButton={ TextButton(onClick={ vm.dismissPair() }) { Text("取消") } })
     BookImportDialogs(vm,chooseImport) { chooseImport = false }
+    BackupHistoryDialog(vm)
 }

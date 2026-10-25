@@ -33,6 +33,14 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         val categories: Map<String,Category>, val duplicateIds: Set<String>, val targetDatabase: String, val targetOwner: String)
     val bookImport = MutableStateFlow<BookImport?>(null)
     val importSelection = MutableStateFlow<Set<String>>(emptySet())
+    val historyOpen = MutableStateFlow(false)
+    val historyRows = MutableStateFlow<List<JSONObject>>(emptyList())
+    val historyNext = MutableStateFlow<Long?>(null)
+    val historyLoaded = MutableStateFlow(false)
+    data class HistoryPreview(val revision: Long, val createdAt: String, val payload: JSONObject,
+        val summary: HistoryRecovery.Summary, val accountDatabase: String, val accountOwner: String)
+    val historyPreview = MutableStateFlow<HistoryPreview?>(null)
+    val recoveredBook = MutableStateFlow<JSONObject?>(null)
     private var action: Job? = null
     val uploading = MutableStateFlow(BackgroundBackup.active(app,vaultName))
     private val jobPrefs = BackgroundBackup.prefs(app,vaultName)
@@ -236,7 +244,9 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
         complete()
     }
     private suspend fun authorized(path: String, body: JSONObject? = null): JSONObject {
-        val a = requireNotNull(account.value) { "请先登录" }
+        val current = requireNotNull(account.value) { "请先登录" }
+        // A completed background upload may already have rotated the persisted session.
+        val a = vault.read()?.takeIf { databaseName(it) == databaseName(current) && owner(it) == owner(current) } ?: current
         val client = ComputerPair.client(a)
         try { return client.call(path, body, a.getString("access_token")) }
         catch(e: BackupApiException) {
@@ -254,6 +264,55 @@ class BackupViewModel @JvmOverloads constructor(application: Application, privat
             .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
     }.getOrDefault(value)
     fun inspect() = run { lastBackup.value = info(authorized("backup/latest/")) }
+    fun openHistory() {
+        if(busy.value || uploading.value) return
+        historyRows.value = emptyList(); historyNext.value = null; historyLoaded.value = false
+        historyPreview.value = null; recoveredBook.value = null; historyOpen.value = true
+        loadHistory()
+    }
+    fun closeHistory() {
+        if(busy.value) return
+        historyOpen.value = false; historyPreview.value = null; recoveredBook.value = null
+    }
+    fun loadHistory() = run {
+        require(!uploading.value) { "请等待当前备份完成" }
+        val before = historyNext.value
+        val result = BackgroundBackup.lock.withLock {
+            try { authorized("backup/history/" + (before?.let { "?before=$it" } ?: "")) }
+            catch(e: BackupApiException) {
+                if(e.status == 404) throw IllegalArgumentException("当前电脑服务不支持备份历史，请更新电脑端并重新连接")
+                throw e
+            }
+        }
+        val rows = result.getJSONArray("items")
+        historyRows.value = ((if(before == null) emptyList() else historyRows.value) +
+            (0 until rows.length()).map { rows.getJSONObject(it) }).distinctBy { it.getLong("revision") }
+        historyNext.value = if(result.isNull("next_before")) null else result.getLong("next_before")
+        historyLoaded.value = true
+    }
+    fun previewHistory(revision: Long) = run {
+        require(!uploading.value) { "请等待当前备份完成" }
+        require(revision > 0 && historyRows.value.any { it.getLong("revision") == revision })
+        val current = requireNotNull(account.value) { "请先登录" }
+        val result = BackgroundBackup.lock.withLock { authorized("backup/download/?revision=$revision") }
+        require(result.getLong("revision") == revision) { "电脑返回的版本不一致，请更新电脑端后重试" }
+        val payload = result.getJSONObject("payload")
+        historyPreview.value = HistoryPreview(revision, formatBackupTime(result.getString("created_at")),
+            payload, HistoryRecovery.preview(payload), databaseName(current), owner(current))
+    }
+    fun dismissHistoryPreview() { if(!busy.value) historyPreview.value = null }
+    fun recoverHistory() = run {
+        require(!uploading.value) { "请等待当前备份完成" }
+        val preview = requireNotNull(historyPreview.value) { "请先预览历史备份" }
+        val current = requireNotNull(account.value) { "请先登录" }
+        require(databaseName(current) == preview.accountDatabase && owner(current) == preview.accountOwner) { "账号已改变，请重新预览" }
+        val book = HistoryRecovery.create(app, preview.payload, preview.revision,
+            current.getJSONObject("user").getString("email"))
+        phoneBooks.remember(book)
+        savedBooks.value = phoneBooks.books()
+        historyPreview.value = null; recoveredBook.value = book
+        message.value = "历史备份已保存为独立手机账本；当前账本保留，未上传到电脑。可切换查看或选择账目追加导入账号"
+    }
     private suspend fun <T> store(block: suspend (BackupStore, JSONObject, LedgerDatabase) -> T): T {
         val a = requireNotNull(account.value) { "请先登录" }
         val name = databaseName(a)

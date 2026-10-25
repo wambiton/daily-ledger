@@ -65,6 +65,50 @@ class AccountBackupFlowTest {
             ui.onNodeWithTag("account-password").assertDoesNotExist()
         } finally {holder.clear()}
     }
+    @Test fun historyRecoveryRequiresPreviewAndKeepsCurrentBook() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val namespace = "history-ui-${UUID.randomUUID()}"
+        val owner = UUID.randomUUID().toString()
+        val account = org.json.JSONObject().put("server", "http://127.0.0.1:8767")
+            .put("user", org.json.JSONObject().put("id", owner).put("email", "history-test@qq.com"))
+        val name = ComputerPair.databaseName(account)
+        val db = LedgerDatabases.acquire(app, name)
+        val vm = BackupViewModel(app, namespace)
+        val holder = ViewModelStore().apply { put("vm", vm) }
+        try {
+            val payload = runBlocking {
+                val repo = LedgerRepository(db, owner); repo.seedDefaults()
+                val category = db.ledger().categorySnapshot(owner).first { it.type == "expense" }
+                repo.save(null, "expense", category.id, "12.34", LocalDate.of(2025, 1, 2), "history-ui")
+                BackupStore(db, owner).export()
+            }
+            val before = runBlocking { db.ledger().allEntries(owner) }
+            val pending = runBlocking { db.ledger().pending(owner) }
+            ui.runOnIdle {
+                vm.account.value = account
+                vm.historyOpen.value = true
+                vm.historyPreview.value = BackupViewModel.HistoryPreview(7, "2025-01-03 12:00:00", payload,
+                    HistoryRecovery.preview(payload), name, owner)
+            }
+            ui.setContent { LedgerTheme { BackupHistoryDialog(vm) } }
+            ui.onNodeWithTag("history-list").performScrollToNode(hasTestTag("confirm-history-recovery"))
+            ui.onNodeWithTag("confirm-history-recovery").assertIsDisplayed()
+            assertTrue(vm.savedBooks.value.isEmpty())
+            ui.onNodeWithTag("confirm-history-recovery").performClick()
+            ui.waitUntil(10000) { !vm.busy.value && vm.recoveredBook.value != null }
+            assertNull(vm.selectedBook.value)
+            assertEquals(name, vm.databaseName(vm.account.value!!))
+            assertEquals(before, runBlocking { db.ledger().allEntries(owner) })
+            assertEquals(pending, runBlocking { db.ledger().pending(owner) })
+            val recovered = requireNotNull(vm.recoveredBook.value)
+            assertNotEquals(name, recovered.getString("database"))
+            ui.onNodeWithTag("history-list").performScrollToNode(hasTestTag("open-recovered-book"))
+            ui.onNodeWithTag("open-recovered-book").performClick()
+            assertEquals(recovered.getString("database"), vm.selectedBook.value!!.getString("database"))
+            assertFalse(vm.viewingAccount())
+            assertEquals(name, vm.databaseName(vm.account.value!!))
+        } finally { holder.clear(); LedgerDatabases.release(name) }
+    }
     @Test fun oldComputerUploadIsBlockedWithoutAcknowledgingLocalChanges() {
         val args=InstrumentationRegistry.getArguments()
         Assume.assumeTrue(args.containsKey("old_email"))

@@ -27,6 +27,7 @@ data class Entry(
     val updatedAt: Long,
     val version: Long = 0,
     val deletedAt: Long? = null,
+    @ColumnInfo(defaultValue = "''") val title: String = "",
 )
 
 @Entity(tableName = "outbox", indices = [Index(value = ["owner", "entityId"])])
@@ -98,5 +99,5 @@ interface LedgerDao {
     @Query("SELECT * FROM outbox WHERE owner = :owner ORDER BY createdAt, rowid") suspend fun pending(owner: String): List<PendingOperation>
 }
 
-@Database(entities = [Category::class, Entry::class, PendingOperation::class, SyncState::class, ImportedSource::class, BudgetPlan::class, BudgetNotice::class], version = 3, exportSchema = true, autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)])
+@Database(entities = [Category::class, Entry::class, PendingOperation::class, SyncState::class, ImportedSource::class, BudgetPlan::class, BudgetNotice::class], version = 4, exportSchema = true, autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)])
 abstract class LedgerDatabase : RoomDatabase() { abstract fun ledger(): LedgerDao }

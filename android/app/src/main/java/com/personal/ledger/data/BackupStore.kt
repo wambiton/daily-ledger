@@ -14,13 +14,15 @@ class BackupStore(private val db: LedgerDatabase, private val owner: String) {
         val cats = JSONArray()
         dao.categorySnapshot(owner).forEach { c -> cats.put(JSONObject().put("id", c.id).put("type", c.type)
             .put("name", c.name).put("default_key", c.defaultKey ?: JSONObject.NULL)) }
+        val rows = dao.allEntries(owner).filter { it.deletedAt == null || it.deletedAt > System.currentTimeMillis() - LedgerRepository.RETENTION_MS }
+        val named = rows.any { it.title.isNotEmpty() }
         val entries = JSONArray()
-        dao.allEntries(owner).filter { it.deletedAt == null || it.deletedAt > System.currentTimeMillis() - LedgerRepository.RETENTION_MS }.forEach { e -> entries.put(JSONObject().put("id", e.id).put("type", e.type)
+        rows.forEach { e -> entries.put(JSONObject().put("id", e.id).put("type", e.type)
             .put("category_id", e.categoryId).put("amount_fen", e.amountFen).put("date", e.date).put("note", e.note)
-            .put("created_at", e.createdAt).put("updated_at", e.updatedAt).put("deleted_at", e.deletedAt ?: JSONObject.NULL)) }
+            .put("created_at", e.createdAt).put("updated_at", e.updatedAt).put("deleted_at", e.deletedAt ?: JSONObject.NULL).apply { if(named) put("title",e.title) }) }
         val budgets = dao.budgetSnapshot(owner)
-        JSONObject().put("format_version", if(budgets.isEmpty()) 2 else 3).put("categories", cats).put("entries", entries).put("import_sources", JSONArray(dao.importedSources(owner))).apply {
-            if(budgets.isNotEmpty()) put("budgets",BudgetSnapshot.encode(budgets))
+        JSONObject().put("format_version", if(named) 4 else if(budgets.isEmpty()) 2 else 3).put("categories", cats).put("entries", entries).put("import_sources", JSONArray(dao.importedSources(owner))).apply {
+            if(named || budgets.isNotEmpty()) put("budgets",BudgetSnapshot.encode(budgets))
         }
     }
     class DuplicateImport(val count: Int): IllegalArgumentException("已有${count}笔本机账目重复导入")

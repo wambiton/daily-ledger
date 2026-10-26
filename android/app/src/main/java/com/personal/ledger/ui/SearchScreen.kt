@@ -41,7 +41,7 @@ fun SearchScreen(entries: List<Entry>, categories: List<Category>, owner: String
     LazyColumn(Modifier.fillMaxSize().testTag("search-list"), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom=24.dp)) {
         item {
             Text("仅搜索当前账本，不含回收站", style=MaterialTheme.typography.bodySmall)
-            OutlinedTextField(keyword, { keyword=it }, label={Text("搜索备注关键词")}, singleLine=true,
+            OutlinedTextField(keyword, { keyword=it }, label={Text("搜索名称或备注关键词")}, singleLine=true,
                 modifier=Modifier.fillMaxWidth().testTag("search-keyword"))
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 listOf("" to "全部", "expense" to "支出", "income" to "收入").forEach { (value,label) ->
@@ -71,6 +71,7 @@ fun SearchScreen(entries: List<Entry>, categories: List<Category>, owner: String
                 Column(Modifier.padding(16.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
                     Text("${entry.date} · ${byId[entry.categoryId]?.name.orEmpty()}")
                     Text("${if(entry.type=="income") "+" else "−"}¥${Rules.money(entry.amountFen)}")
+                    if(entry.title.isNotBlank()) Text(entry.title)
                     if(entry.note.isNotBlank()) Text(entry.note)
                 }
             }

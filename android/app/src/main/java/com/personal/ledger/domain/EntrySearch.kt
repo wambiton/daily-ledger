@@ -15,7 +15,7 @@ data class EntrySearch(
         if (!valid) return emptyList()
         return entries.filter {
             it.owner == owner && it.deletedAt == null &&
-                it.note.contains(keyword.trim(), ignoreCase = true) &&
+                (it.note.contains(keyword.trim(), ignoreCase = true) || it.title.contains(keyword.trim(), ignoreCase = true)) &&
                 (from.isEmpty() || it.date >= from) && (to.isEmpty() || it.date <= to) &&
                 (type.isEmpty() || it.type == type) && (categoryId.isEmpty() || it.categoryId == categoryId)
         }.sortedWith(compareByDescending<Entry> { it.date }.thenByDescending { it.createdAt }.thenBy { it.id })

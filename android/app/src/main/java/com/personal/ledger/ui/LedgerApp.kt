@@ -44,6 +44,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
     var categoryId by rememberSaveable { mutableStateOf("") }
     var amount by rememberSaveable { mutableStateOf("") }
     var date by rememberSaveable { mutableStateOf(Rules.today().toString()) }
+    var entryTitle by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
     var entryId by rememberSaveable { mutableStateOf<String?>(null) }
     var detailFromCalendar by rememberSaveable { mutableStateOf(false) }
@@ -71,7 +72,7 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
         }.show()
     }
     fun beginNew(onDate: String) {
-        type = "expense"; categoryId = ""; amount = ""; note = ""; date = onDate
+        type = "expense"; categoryId = ""; amount = ""; note = ""; entryTitle = ""; date = onDate
         entryId = null; dirty = false; categoryReturn = false; route = "choose"
     }
     fun leave() {
@@ -201,9 +202,11 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, enabled = !busy,
                         modifier = Modifier.fillMaxWidth().testTag("amount"))
                     OutlinedButton(onClick = { chooseDate(date) { date = it.toString(); dirty = true } }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("日期：$date") }
+                    OutlinedTextField(entryTitle, { entryTitle = it; dirty = true }, label = { Text("账目名称（选填，最多40字）") },
+                        placeholder = { Text("例如：早餐") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth().testTag("entry-title"))
                     OutlinedTextField(note, { note = it; dirty = true }, label = { Text("备注（选填）") }, placeholder = { Text("例如：午餐，支付宝支付") },
                         enabled = !busy, minLines = 2, modifier = Modifier.fillMaxWidth().testTag("note"))
-                    Button(onClick = { vm.save(entryId, type, categoryId, amount, date, note) {
+                    Button(onClick = { vm.save(entryId, type, categoryId, amount, date, note, entryTitle) {
                         selectedDate = date; monthText = YearMonth.from(LocalDate.parse(date)).toString(); route = if(date==today.toString()) "home" else "calendar"; tab = 0; dirty = false
                     } }, enabled = !busy && categoryId.isNotEmpty() && amount.isNotBlank(), modifier = Modifier.fillMaxWidth().testTag("save-entry")) { Text(if(busy) "正在保存…" else "保存账目") }
                 }
@@ -213,13 +216,14 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
                         LedgerCard {
                             Text(if(entry.type == "expense") "支出" else "收入", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("${if(entry.type == "expense") "−" else "+"}¥${Rules.money(entry.amountFen)}", style = MaterialTheme.typography.headlineLarge)
+                            if(entry.title.isNotBlank()) Text("名称：${entry.title}")
                             Text("分类：${byId[entry.categoryId]?.name.orEmpty()}")
                             Text("日期：${entry.date}")
                             Text("备注：${entry.note.ifBlank { "未填写" }}")
                         }
                         Button(onClick = {
                             entryId = entry.id; type = entry.type; categoryId = entry.categoryId; amount = Rules.money(entry.amountFen)
-                            date = entry.date; note = entry.note; dirty = false; route = "form"
+                            date = entry.date; note = entry.note; entryTitle = entry.title; dirty = false; route = "form"
                         }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("编辑") }
                         TextButton(onClick = { deleteConfirm = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("删除这笔账目", color = MaterialTheme.colorScheme.error) }
                     }
@@ -281,7 +285,8 @@ fun LedgerApp(vm: LedgerViewModel = viewModel(), autoOpenRequest: Long = 0, exte
             HorizontalDivider()
             Row(Modifier.fillMaxWidth().clickable { onEntry(entry) }.padding(vertical = 8.dp).testTag("entry-${entry.id}"), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(categories[entry.categoryId]?.name ?: "分类", fontWeight = FontWeight.Medium)
+                    Text(entry.title.ifBlank { categories[entry.categoryId]?.name ?: "分类" }, fontWeight = FontWeight.Medium)
+                    if(entry.title.isNotBlank()) Text(categories[entry.categoryId]?.name.orEmpty(), style = MaterialTheme.typography.bodySmall)
                     if(entry.note.isNotBlank()) Text(entry.note, maxLines = 2, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text("${if(entry.type == "expense") "−" else "+"}${Rules.money(entry.amountFen)}", fontWeight = FontWeight.Bold)

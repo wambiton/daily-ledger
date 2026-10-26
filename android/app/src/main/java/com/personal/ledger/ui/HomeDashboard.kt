@@ -143,7 +143,7 @@ import java.time.YearMonth
                 Surface(Modifier.fillMaxWidth().testTag("entry-${entry.id}").clickable{onEntry(entry)},shape=RoundedCornerShape(topStart=if(index==0) 16.dp else 0.dp,topEnd=if(index==0) 16.dp else 0.dp,bottomStart=if(index==rows.lastIndex) 16.dp else 0.dp,bottomEnd=if(index==rows.lastIndex) 16.dp else 0.dp),color=MaterialTheme.colorScheme.surface) {
                     Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                         Box(Modifier.size(38.dp).background(tone,CircleShape),contentAlignment=Alignment.Center) {LedgerGlyph(name,color=Color(0xFF243C5A))}
-                        Column(Modifier.weight(1f)) {Text(name,fontWeight=FontWeight.Bold);if(entry.note.isNotBlank()) Text(entry.note,style=MaterialTheme.typography.bodySmall,maxLines=1,overflow=TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.onSurfaceVariant)}
+                        Column(Modifier.weight(1f)) {Text(entry.title.ifBlank { name },fontWeight=FontWeight.Bold);if(entry.title.isNotBlank()) Text(name,style=MaterialTheme.typography.bodySmall);if(entry.note.isNotBlank()) Text(entry.note,style=MaterialTheme.typography.bodySmall,maxLines=1,overflow=TextOverflow.Ellipsis,color=MaterialTheme.colorScheme.onSurfaceVariant)}
                         Text("${if(entry.type=="expense") "−" else "+"}¥${displayMoney(entry.amountFen)}",fontFamily=MoneyFont,fontWeight=FontWeight.Bold,fontSize=17.sp)
                         Text("›",color=MaterialTheme.colorScheme.onSurfaceVariant)
                     }

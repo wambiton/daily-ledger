@@ -22,6 +22,7 @@ fun TrashScreen(vm: LedgerViewModel, categories: Map<String, Category>, busy: Bo
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("${entry.date} · ${categories[entry.categoryId]?.name.orEmpty()} · ¥${Rules.money(entry.amountFen)}")
+                if(entry.title.isNotBlank()) Text(entry.title)
                 if(entry.note.isNotBlank()) Text(entry.note)
                 Text("到期：${Instant.ofEpochMilli(expiry).atZone(Rules.zone).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))}")
                 OutlinedButton(onClick = { vm.restoreDeleted(entry.id) }, enabled = !busy && expiry > System.currentTimeMillis()) { Text("恢复账目") }

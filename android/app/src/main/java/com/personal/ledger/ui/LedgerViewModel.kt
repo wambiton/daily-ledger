@@ -140,8 +140,8 @@ class LedgerViewModel @JvmOverloads constructor(application: Application, val da
     fun addCategory(type: String, name: String, complete: (Category) -> Unit) = runAction {
         complete(repo.addCategory(type, name))
     }
-    fun save(id: String?, type: String, categoryId: String, amount: String, date: String, note: String, complete: () -> Unit) = runAction {
-        repo.save(id, type, categoryId, amount, LocalDate.parse(date), note)
+    fun save(id: String?, type: String, categoryId: String, amount: String, date: String, note: String, title: String? = null, complete: () -> Unit) = runAction {
+        repo.save(id, type, categoryId, amount, LocalDate.parse(date), note, title)
         complete()
     }
     fun delete(id: String, complete: () -> Unit) = runAction {

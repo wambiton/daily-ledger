@@ -20,11 +20,11 @@ data class PortableSnapshot(val categories: List<Category>, val entries: List<En
                 val actual = o.keys().asSequence().toSet()
                 require(actual.containsAll(required) && allowed.containsAll(actual)) { "备份字段不正确" }
             }
-            val hasBudgets = payload.optInt("format_version") == 3
+            val hasBudgets = payload.optInt("format_version") >= 3
             keys(payload, setOf("format_version","categories","entries","import_sources") + (if(hasBudgets) setOf("budgets") else emptySet()),
                 setOf("format_version","categories","entries") + (if(hasBudgets) setOf("budgets") else emptySet()))
             val version = number(payload,"format_version")
-            require(version in 1L..3L) { "备份版本不支持，请更新软件" }
+            require(version in 1L..4L) { "备份版本不支持，请更新软件" }
             val cats = payload.getJSONArray("categories"); val items = payload.getJSONArray("entries")
             require(cats.length() <= 2000 && items.length() <= 50000) { "备份记录过多" }
             val categories = (0 until cats.length()).map { i ->
@@ -41,7 +41,7 @@ data class PortableSnapshot(val categories: List<Category>, val entries: List<En
             val entries = (0 until items.length()).map { i ->
                 val e = items.getJSONObject(i)
                 val fields = setOf("id","type","category_id","amount_fen","date","note","created_at","updated_at")
-                keys(e,if(version >= 2L) fields + "deleted_at" else fields)
+                keys(e,fields + (if(version >= 2L) setOf("deleted_at") else emptySet()) + (if(version >= 4L) setOf("title") else emptySet()))
                 val c = requireNotNull(byId[e.getString("category_id")]) { "备份缺少分类" }
                 require(e.getString("type") == c.type)
                 val amount = number(e,"amount_fen"); require(amount in 1..99999999999L)
@@ -52,7 +52,10 @@ data class PortableSnapshot(val categories: List<Category>, val entries: List<En
                 require(created in 0..9999999999999L && updated in created..9999999999999L)
                 val deleted = if(version == 1L || e.isNull("deleted_at")) null else number(e,"deleted_at")
                 require(deleted == null || deleted in created..updated)
-                Entry(id(e.getString("id")),owner,c.type,c.id,amount,day.toString(),note,created,updated,deletedAt=deleted)
+                Entry(id(e.getString("id")),owner,c.type,c.id,amount,day.toString(),note,created,updated,deletedAt=deleted, title=if(version >= 4L) {
+                    val title = e.get("title"); require(title is String) { "账目名称格式不正确" }
+                    require(title.codePointCount(0,title.length) <= 40) { "账目名称不能超过40字" }; title
+                } else "")
             }
             require(entries.map { it.id }.distinct().size == entries.size)
             val sourceArray = if(payload.has("import_sources")) payload.getJSONArray("import_sources") else JSONArray()

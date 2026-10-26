@@ -145,6 +145,7 @@ fun ComparisonScreen(entries: List<Entry>, categories: List<Category>, onEntry: 
                     OutlinedButton(onClick = { onEntry(entry) }, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth()) {
                             Text("${entry.date} · ¥${Rules.money(entry.amountFen)}")
+                            if(entry.title.isNotBlank()) Text(entry.title)
                             if(entry.note.isNotBlank()) Text(entry.note, maxLines = 2)
                         }
                     }

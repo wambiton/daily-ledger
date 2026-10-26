@@ -38,9 +38,9 @@ object ExcelExport {
                     }
                     append("</row>")
                 }
-                row(1,listOf("日期","收支","分类","金额（人民币元）","备注"),false)
+                row(1,listOf("日期","收支","分类","金额（人民币元）","备注","名称"),false)
                 snapshot.entries.filter { it.deletedAt == null }.sortedWith(compareBy<Entry> { it.date }.thenBy { it.createdAt }).forEachIndexed { i, e ->
-                    row(i+2,listOf(e.date,if(e.type=="expense") "支出" else "收入",categories.getValue(e.categoryId).name,Rules.money(e.amountFen),e.note),true)
+                    row(i+2,listOf(e.date,if(e.type=="expense") "支出" else "收入",categories.getValue(e.categoryId).name,Rules.money(e.amountFen),e.note,e.title),true)
                 }
                 append("</sheetData></worksheet>")
             }

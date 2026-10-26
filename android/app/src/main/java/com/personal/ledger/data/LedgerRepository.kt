@@ -52,7 +52,7 @@ class LedgerRepository(private val db: LedgerDatabase, val owner: String) {
         category
     }
 
-    suspend fun save(id: String?, type: String, categoryId: String, amount: String, date: LocalDate, note: String): Entry = db.withTransaction {
+    suspend fun save(id: String?, type: String, categoryId: String, amount: String, date: LocalDate, note: String, title: String? = null): Entry = db.withTransaction {
         val category = requireNotNull(dao.category(categoryId)) { "请先选择分类" }
         require(category.owner == owner && category.type == type) { "分类与收支类型不一致" }
         Rules.date(date)
@@ -62,7 +62,7 @@ class LedgerRepository(private val db: LedgerDatabase, val owner: String) {
         require(previous == null || (previous.owner == owner && previous.deletedAt == null)) { "账目不可修改" }
         val now = System.currentTimeMillis()
         val entry = Entry(id ?: UUID.randomUUID().toString(), owner, type, categoryId, value,
-            date.toString(), note, previous?.createdAt ?: now, now, previous?.version ?: 0)
+            date.toString(), note, previous?.createdAt ?: now, now, previous?.version ?: 0, title = Rules.title(title ?: previous?.title.orEmpty()))
         dao.upsertEntry(entry)
         queueEntry(entry, "upsert")
         entry

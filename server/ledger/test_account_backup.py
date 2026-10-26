@@ -17,6 +17,30 @@ from . import sessions
 class AccountBackupTests(TestCase):
     password = 'test-password-123'
 
+    def test_named_snapshot_round_trip_and_invalid_title_preserves_history(self):
+        account = self.account()
+        token = account['access_token']
+        old = self.payload()
+        self.assertEqual(self.post('backup/', {'operation_id': str(uuid.uuid4()), 'base_revision': 0,
+                                             'payload': old}, token).status_code, 200)
+        named = copy.deepcopy(old)
+        named.update(format_version=4, budgets=[])
+        named['entries'][0].update(title='早餐 🍞', deleted_at=None)
+        self.assertEqual(self.post('backup/', {'operation_id': str(uuid.uuid4()), 'base_revision': 1,
+                                             'payload': named}, token).status_code, 200)
+        for revision, expected in ((1, old), (2, named)):
+            restored = self.client.get(f'/api/v1/backup/download/?revision={revision}',
+                                       HTTP_AUTHORIZATION='Bearer ' + token)
+            self.assertEqual(restored.json()['payload'], expected)
+        before = list(BackupSnapshot.objects.values_list('revision', 'payload', 'digest'))
+        for title in (None, 123, '长' * 41):
+            broken = copy.deepcopy(named)
+            broken['entries'][0]['title'] = title
+            self.assertEqual(self.post('backup/', {'operation_id': str(uuid.uuid4()), 'base_revision': 2,
+                                                 'payload': broken}, token).status_code, 400)
+        self.assertEqual(list(BackupSnapshot.objects.values_list('revision', 'payload', 'digest')), before)
+        self.assertEqual(BackupHead.objects.get(user_id=account['user']['id']).revision, 2)
+
     def test_version_two_trash_round_trip_and_validation(self):
         account = self.account()
         payload = self.payload()

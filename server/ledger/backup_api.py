@@ -24,10 +24,10 @@ def identifier(value):
 
 
 def validate(payload):
-    if not isinstance(payload, dict) or type(payload.get('format_version')) is not int or payload['format_version'] not in (1, 2, 3):
+    if not isinstance(payload, dict) or type(payload.get('format_version')) is not int or payload['format_version'] not in (1, 2, 3, 4):
         raise ValueError('invalid snapshot')
     fields = {'format_version', 'categories', 'entries'}
-    if payload['format_version'] == 3:
+    if payload['format_version'] >= 3:
         fields.add('budgets')
     if set(payload) not in (fields, fields | {'import_sources'}):
         raise ValueError('invalid snapshot fields')
@@ -58,6 +58,8 @@ def validate(payload):
         fields = {'id', 'type', 'category_id', 'amount_fen', 'date', 'note', 'created_at', 'updated_at'}
         if payload['format_version'] >= 2:
             fields.add('deleted_at')
+        if payload['format_version'] >= 4:
+            fields.add('title')
         if not isinstance(item, dict) or set(item) != fields:
             raise ValueError('invalid entry')
         eid = identifier(item['id'])
@@ -71,11 +73,13 @@ def validate(payload):
             raise ValueError('invalid date')
         if not isinstance(item['note'], str) or len(item['note']) > 500:
             raise ValueError('invalid note')
+        if payload['format_version'] >= 4 and (not isinstance(item['title'], str) or len(item['title']) > 40):
+            raise ValueError('invalid title')
         integer(item['created_at'])
         integer(item['updated_at'], item['created_at'])
         if item.get('deleted_at') is not None:
             integer(item['deleted_at'], item['created_at'], item['updated_at'])
-    if payload['format_version'] == 3:
+    if payload['format_version'] >= 3:
         validate_budgets(payload['budgets'], by_id)
     return payload
 

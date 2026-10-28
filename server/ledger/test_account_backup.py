@@ -41,6 +41,34 @@ class AccountBackupTests(TestCase):
         self.assertEqual(list(BackupSnapshot.objects.values_list('revision', 'payload', 'digest')), before)
         self.assertEqual(BackupHead.objects.get(user_id=account['user']['id']).revision, 2)
 
+    def test_naming_rules_roundtrip_invalid_trust_keeps_history(self):
+        account = self.account()
+        token = account['access_token']
+        payload = self.payload()
+        payload.update(format_version=5, budgets=[], naming_rules=[])
+        payload['entries'][0].update(title='', deleted_at=None)
+        rule = dict(id=str(uuid.uuid4()), title='早餐', category_id=payload['categories'][0]['id'],
+                    channel='支付宝', merchant='', start_minute=390, end_minute=540,
+                    weekdays=[1, 2, 3, 4, 5, 6, 7], priority=0, enabled=True, allow_automatic=True,
+                    trusted=[dict(channel='支付宝', merchant='模拟食堂')])
+        payload['naming_rules'].append(rule)
+        self.assertEqual(self.post('backup/', dict(operation_id=str(uuid.uuid4()), base_revision=0,
+                                                 payload=payload), token).status_code, 200)
+        restored = self.client.get('/api/v1/backup/download/', HTTP_AUTHORIZATION='Bearer '+token)
+        self.assertEqual(restored.json()['payload'], payload)
+        before = list(BackupSnapshot.objects.values_list('revision', 'payload', 'digest'))
+        bad_rules = [dict(rule, allow_automatic=False), dict(rule, category_id=str(uuid.uuid4())),
+                     dict(rule, weekdays=[True]), dict(rule, weekdays=[1, 1]), dict(rule, title='长'*41),
+                     dict(rule, trusted=[dict(channel='微信', merchant='模拟食堂')]),
+                     dict(rule, trusted=[dict(channel='支付宝', merchant='')]), dict(rule, enabled=1)]
+        for bad in bad_rules:
+            broken = copy.deepcopy(payload)
+            broken['naming_rules'] = [bad]
+            self.assertEqual(self.post('backup/', dict(operation_id=str(uuid.uuid4()), base_revision=1,
+                                                      payload=broken), token).status_code, 400)
+        self.assertEqual(list(BackupSnapshot.objects.values_list('revision', 'payload', 'digest')), before)
+        self.assertEqual(BackupHead.objects.get(user_id=account['user']['id']).revision, 1)
+
     def test_version_two_trash_round_trip_and_validation(self):
         account = self.account()
         payload = self.payload()

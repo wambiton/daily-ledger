@@ -24,11 +24,13 @@ def identifier(value):
 
 
 def validate(payload):
-    if not isinstance(payload, dict) or type(payload.get('format_version')) is not int or payload['format_version'] not in (1, 2, 3, 4):
+    if not isinstance(payload, dict) or type(payload.get('format_version')) is not int or payload['format_version'] not in (1, 2, 3, 4, 5):
         raise ValueError('invalid snapshot')
     fields = {'format_version', 'categories', 'entries'}
     if payload['format_version'] >= 3:
         fields.add('budgets')
+    if payload['format_version'] >= 5:
+        fields.add('naming_rules')
     if set(payload) not in (fields, fields | {'import_sources'}):
         raise ValueError('invalid snapshot fields')
     sources = payload.get('import_sources', [])
@@ -81,6 +83,8 @@ def validate(payload):
             integer(item['deleted_at'], item['created_at'], item['updated_at'])
     if payload['format_version'] >= 3:
         validate_budgets(payload['budgets'], by_id)
+    if payload['format_version'] >= 5:
+        validate_naming_rules(payload['naming_rules'], by_id)
     return payload
 
 
@@ -202,3 +206,57 @@ def validate_budgets(plans, categories):
                 allocated += integer(amount,1,99999999999)
         if allocated > total:
             raise ValueError('allocations exceed budget')
+
+
+def validate_naming_rules(rules, categories):
+    if not isinstance(rules, list) or len(rules) > 200:
+        raise ValueError('invalid naming rules')
+    ids = set()
+    fields = {'id', 'title', 'category_id', 'channel', 'merchant', 'start_minute',
+              'end_minute', 'weekdays', 'priority', 'enabled', 'allow_automatic', 'trusted'}
+    channels = {'微信', '支付宝', '银行卡'}
+    for rule in rules:
+        if not isinstance(rule, dict) or set(rule) != fields:
+            raise ValueError('invalid naming rule fields')
+        rid = identifier(rule['id'])
+        if rid in ids:
+            raise ValueError('duplicate naming rule')
+        ids.add(rid)
+        category = categories.get(rule['category_id'])
+        if category is None or category['type'] != 'expense':
+            raise ValueError('invalid naming category')
+        for field, maximum, empty in [('title', 40, False), ('merchant', 80, True)]:
+            value = rule[field]
+            if not isinstance(value, str) or value != value.strip() or len(value) > maximum or (not empty and not value):
+                raise ValueError('invalid naming text')
+        if rule['channel'] not in channels | {''}:
+            raise ValueError('invalid naming channel')
+        start, end = integer(rule['start_minute'], 0, 1439), integer(rule['end_minute'], 0, 1440)
+        if start == end:
+            raise ValueError('empty naming window')
+        days = rule['weekdays']
+        if not isinstance(days, list) or not 1 <= len(days) <= 7:
+            raise ValueError('invalid naming weekdays')
+        for day in days:
+            integer(day, 1, 7)
+        if len(set(days)) != len(days):
+            raise ValueError('duplicate naming weekdays')
+        integer(rule['priority'], 0, 100)
+        if type(rule['enabled']) is not bool or type(rule['allow_automatic']) is not bool:
+            raise ValueError('invalid naming permission')
+        trusted = rule['trusted']
+        if not isinstance(trusted, list) or len(trusted) > 1000 or (trusted and not rule['allow_automatic']):
+            raise ValueError('invalid naming trust')
+        seen = set()
+        for item in trusted:
+            if not isinstance(item, dict) or set(item) != {'channel', 'merchant'}:
+                raise ValueError('invalid trust fields')
+            merchant, channel = item['merchant'], item['channel']
+            if not isinstance(merchant, str) or not merchant or merchant != merchant.strip() or len(merchant) > 80 or channel not in channels:
+                raise ValueError('invalid trust identity')
+            if (rule['merchant'] and merchant != rule['merchant']) or (rule['channel'] and channel != rule['channel']):
+                raise ValueError('trust outside rule')
+            identity = (channel, merchant)
+            if identity in seen:
+                raise ValueError('duplicate trust identity')
+            seen.add(identity)

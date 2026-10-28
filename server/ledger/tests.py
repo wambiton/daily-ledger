@@ -11,7 +11,7 @@ class FoundationTests(TestCase):
         result = self.client.get('/api/v1/health/')
         self.assertEqual(result.status_code,200)
         self.assertTrue(result.json()['database'])
-        self.assertEqual(result.json()['backup_formats'], [1,2,3,4])
+        self.assertEqual(result.json()['backup_formats'], [1,2,3,4,5])
         self.assertEqual(result.json()['app_version'], '0.7.0')
 
     def test_password_hashed(self):

@@ -59,6 +59,9 @@ data class BudgetNotice(val owner: String, val key: String, val level: Int, val 
 
 @Dao
 interface LedgerDao {
+    @Query("SELECT * FROM naming_settings WHERE owner = :owner") suspend fun namingSettings(owner: String): NamingSettings?
+    @Upsert suspend fun putNamingSettings(value: NamingSettings)
+
     @Query("SELECT * FROM budget_plans WHERE owner = :owner ORDER BY startMonth DESC") fun budgets(owner: String): Flow<List<BudgetPlan>>
     @Query("SELECT * FROM budget_plans WHERE owner = :owner ORDER BY startMonth") suspend fun budgetSnapshot(owner: String): List<BudgetPlan>
     @Upsert suspend fun putBudget(plan: BudgetPlan)
@@ -99,5 +102,5 @@ interface LedgerDao {
     @Query("SELECT * FROM outbox WHERE owner = :owner ORDER BY createdAt, rowid") suspend fun pending(owner: String): List<PendingOperation>
 }
 
-@Database(entities = [Category::class, Entry::class, PendingOperation::class, SyncState::class, ImportedSource::class, BudgetPlan::class, BudgetNotice::class], version = 4, exportSchema = true, autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)])
+@Database(entities = [Category::class, Entry::class, PendingOperation::class, SyncState::class, ImportedSource::class, BudgetPlan::class, BudgetNotice::class, NamingSettings::class], version = 5, exportSchema = true, autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5)])
 abstract class LedgerDatabase : RoomDatabase() { abstract fun ledger(): LedgerDao }

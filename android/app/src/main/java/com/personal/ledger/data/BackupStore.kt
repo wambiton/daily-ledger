@@ -15,13 +15,19 @@ class BackupStore(private val db: LedgerDatabase, private val owner: String) {
         dao.categorySnapshot(owner).forEach { c -> cats.put(JSONObject().put("id", c.id).put("type", c.type)
             .put("name", c.name).put("default_key", c.defaultKey ?: JSONObject.NULL)) }
         val rows = dao.allEntries(owner).filter { it.deletedAt == null || it.deletedAt > System.currentTimeMillis() - LedgerRepository.RETENTION_MS }
-        val named = rows.any { it.title.isNotEmpty() }
+        val settings = dao.namingSettings(owner)
+        val named = settings != null || rows.any { it.title.isNotEmpty() }
         val entries = JSONArray()
         rows.forEach { e -> entries.put(JSONObject().put("id", e.id).put("type", e.type)
             .put("category_id", e.categoryId).put("amount_fen", e.amountFen).put("date", e.date).put("note", e.note)
             .put("created_at", e.createdAt).put("updated_at", e.updatedAt).put("deleted_at", e.deletedAt ?: JSONObject.NULL).apply { if(named) put("title",e.title) }) }
         val budgets = dao.budgetSnapshot(owner)
-        JSONObject().put("format_version", if(named) 4 else if(budgets.isEmpty()) 2 else 3).put("categories", cats).put("entries", entries).put("import_sources", JSONArray(dao.importedSources(owner))).apply {
+        JSONObject().put("format_version", if(settings != null) 5 else if(named) 4 else if(budgets.isEmpty()) 2 else 3).put("categories", cats).put("entries", entries).put("import_sources", JSONArray(dao.importedSources(owner))).apply {
+            if(settings != null) {
+                val rules = JSONArray(settings.rulesJson)
+                NamingRuleSnapshot.parse(rules, "portable", owner, dao.categorySnapshot(owner))
+                put("naming_rules", rules)
+            }
             if(named || budgets.isNotEmpty()) put("budgets",BudgetSnapshot.encode(budgets))
         }
     }
@@ -82,7 +88,7 @@ class BackupStore(private val db: LedgerDatabase, private val owner: String) {
     suspend fun restore(payload: JSONObject, revision: Long, requireEmpty: Boolean = false) = db.withTransaction {
         require(revision >= 0)
         val parsed = PortableSnapshot.parse(payload, owner)
-        if(requireEmpty) require(dao.allEntries(owner).isEmpty() && dao.budgetSnapshot(owner).isEmpty()) { "当前账号已有账目，不能替换账本" }
+        if(requireEmpty) require(dao.allEntries(owner).isEmpty() && dao.budgetSnapshot(owner).isEmpty() && dao.namingSettings(owner) == null) { "当前账号已有账目，不能替换账本" }
         val categories = parsed.categories
         val entries = parsed.retained(System.currentTimeMillis())
         val sourceIds = parsed.sources
@@ -92,10 +98,14 @@ class BackupStore(private val db: LedgerDatabase, private val owner: String) {
         // Their category references must remain valid; never silently orphan them.
         val savedBudgets = if(payload.getInt("format_version") < 3) dao.budgetSnapshot(owner) else parsed.budgets
         savedBudgets.forEach { BudgetRules.validate(it,savedBudgets,categories) }
+        val rules = parsed.namingRules?.let { NamingRuleSnapshot.encode(it) }
+            ?: dao.namingSettings(owner)?.let { JSONArray(it.rulesJson) }
+        if(rules != null) NamingRuleSnapshot.parse(rules, "portable", owner, categories)
         dao.clearEntries(owner); dao.clearOutbox(owner); dao.clearCategories(owner)
         dao.clearBudgets(owner); dao.clearNotices(owner)
         savedBudgets.forEach { dao.putBudget(it) }
         categories.forEach { dao.insertCategory(it) }
+        if(rules != null) dao.putNamingSettings(NamingSettings(owner, rules.toString()))
         entries.forEach { dao.upsertEntry(it) }
         dao.setBackupState(SyncState(owner, revision, if(revision > 0) System.currentTimeMillis() else null))
     }

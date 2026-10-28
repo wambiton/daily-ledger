@@ -19,19 +19,20 @@ class AutoEntryViewModel(app: Application): AndroidViewModel(app) {
     val review=MutableStateFlow<Review?>(null)
     fun open(c: PaymentCandidate) = action {
         withLedger(c) {db ->
-            val fresh=requireNotNull(inbox.auto().candidate(c.id))
+            val selected=requireNotNull(inbox.auto().candidate(c.id))
+            val fresh=if(selected.status=="linked") requireNotNull(selected.mergedInto?.let {inbox.auto().candidate(it)}) else selected
             val root=fresh.mergedInto?.let {inbox.auto().candidate(it)} ?: fresh
             val sources=(listOf(root)+inbox.auto().children(root.id)).filter {it.owner==c.owner && it.databaseName==c.databaseName}
             review.value=Review(fresh,db.ledger().categorySnapshot(c.owner),AutoEntryProcessor(inbox).matches(fresh,db),fresh.entryId?.let {db.ledger().entry(it)},sources)
         }
     }
-    fun save(type: String,category: String,amount: String,date: String,note: String,remember: Boolean,replace: String?) = action {
+    fun save(type: String,category: String,amount: String,date: String,note: String,remember: Boolean,replace: String?,title: String?=null) = action {
         val selected=requireNotNull(review.value);val c=selected.candidate
         withLedger(c) {db ->
             if(c.status=="booked" || c.status=="merged") {
                 val e=requireNotNull(selected.entry) {"原账目已不存在"};require(e.owner==c.owner)
-                LedgerRepository(db,c.owner).save(e.id,type,category,amount,LocalDate.parse(date),note)
-            } else AutoEntryProcessor(inbox).confirm(c,db,category,type,amount,date,note,remember,replace)
+                LedgerRepository(db,c.owner).save(e.id,type,category,amount,LocalDate.parse(date),note,title)
+            } else AutoEntryProcessor(inbox).confirm(c,db,category,type,amount,date,note,remember,replace,title)
             BudgetNotifications.send(getApplication(),c.databaseName,BudgetRepository(db,c.owner).reconcile())
         }
         review.value=null

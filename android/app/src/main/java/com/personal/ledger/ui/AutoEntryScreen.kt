@@ -32,6 +32,7 @@ import java.time.format.DateTimeFormatter
     val context=LocalContext.current
     val prefs=remember {AutoCapture.prefs(context)}
     var tick by remember {mutableIntStateOf(0)}
+    var rulesTarget by remember {mutableStateOf<Triple<String,String,String>?>(null)}
     var choose by remember {mutableStateOf(false)}
     var settingsExpanded by rememberSaveable {mutableStateOf(false)}
     var diagnosticsExpanded by rememberSaveable {mutableStateOf(false)}
@@ -53,8 +54,9 @@ import java.time.format.DateTimeFormatter
     val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){tick++}
     LaunchedEffect(Unit){while(true){tick++;delay(1500)}}
     LaunchedEffect(granted,enabled){AutoCaptureRecovery.sync(context,"自动记账设置")}
+    rulesTarget?.let { book -> NamingRulesScreen(book.first,book.second,book.third){rulesTarget=null}; return }
     if(review!=null) {
-        key(review!!.candidate.id) {AutoEntryReview(review!!,busy,error,{vm.review.value=null},{type,category,amount,date,note,remember,replace->vm.save(type,category,amount,date,note,remember,replace)},{vm.ignore(review!!.candidate.id)},{vm.split(it)})}
+        key(review!!.candidate.id) {AutoEntryReview(review!!,busy,error,{vm.review.value=null},{type,category,amount,date,note,remember,replace->vm.save(type,category,amount,date,note,remember,replace)},{vm.ignore(review!!.candidate.id)},{vm.split(it)},saveNamed={type,category,amount,date,note,remember,replace,title->vm.save(type,category,amount,date,note,remember,replace,title)})}
         return
     }
     fun whenText(time: Long)=if(time<=0) "尚无" else Instant.ofEpochMilli(time).atZone(Rules.zone).format(DateTimeFormatter.ofPattern("MM-dd HH:mm:ss"))
@@ -78,6 +80,7 @@ import java.time.format.DateTimeFormatter
                 },enabled=(!busy && (enabled || (granted || smsEnabled&&smsGranted)&&target!=null)),modifier=Modifier.testTag("auto-enabled"))
             }
                     TextButton(onClick={choose=true},enabled=!busy) {Text("选择自动记账账本")}
+                    OutlinedButton(onClick={rulesTarget=target},enabled=!busy&&target!=null,modifier=Modifier.testTag("naming-rules-open")){Text("管理自动命名规则")}
                 }
             }
         }
@@ -108,7 +111,7 @@ import java.time.format.DateTimeFormatter
                 if(!enabled) Text("还需开启上方自动记账总开关并指定账本")
                 Text("目前适配招商银行95555的新交易短信，不读取历史短信；验证码和普通短信不保存。系统未送达短信时无法识别。")
                 Text("普通消费、存入和退款自动入账；未知分类使用其他支出/其他收入。充值、提现、明确本人互转不计收支。")
-                Text("同一账本内，银行卡短信与微信/支付宝通知按渠道、金额、收支及5分钟时间窗口自动配对，仅计一笔；已处理记录中可查看来源和拆分。相近的不同交易仍可能误合并，请核对。")
+                Text("同一账本内，银行卡短信与支付通知需渠道、金额、方向、时间及商户对应且候选唯一才合并；不确定时待确认，仅确定的同笔来源计一笔；已处理记录中可查看来源和拆分。相近的不同交易仍可能误合并，请核对。")
                 Text("最近识别银行短信：${whenText(prefs.getLong("recognized_sms",0))}",style=MaterialTheme.typography.bodySmall)
             }}
             TextButton(onClick={settingsExpanded=!settingsExpanded},modifier=Modifier.testTag("auto-settings-toggle")) {
@@ -144,7 +147,7 @@ import java.time.format.DateTimeFormatter
                 Text("$platform：应用通知 ${whenText(prefs.getLong("seen_$platform",0))}；支付识别 ${whenText(prefs.getLong("recognized_$platform",0))}",style=MaterialTheme.typography.bodySmall)
                 Text(prefs.getString("reason_$platform",null) ?: "尚无可判断的新通知；应用内账单不等于系统通知",style=MaterialTheme.typography.bodySmall)
             }
-            Text("来源、合并关系、待确认和商户规则仅在本手机保存；正式入账后随原有账号备份。",style=MaterialTheme.typography.bodySmall)
+            Text("来源、合并关系、待确认和旧商户分类记忆保存在本手机；新命名规则与正式账目可随电脑备份保存。",style=MaterialTheme.typography.bodySmall)
             }
             prefs.getString("error",null)?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
@@ -154,7 +157,7 @@ import java.time.format.DateTimeFormatter
                 FilterChip(selected=history,onClick={history=true},label={Text("已处理记录")})
             }
         }
-        val visible=rows.filter {if(history) it.status!="pending" else it.status=="pending"}
+        val visible=rows.filter {if(history) it.status !in setOf("pending","linked") else it.status=="pending"}
         if(visible.isEmpty()) item {Text(if(history) "暂无已处理记录" else "暂无待确认记录；这不代表所有付款均已被识别")}
         items(visible,key={it.id}) {c ->
             Card(Modifier.fillMaxWidth()) {Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
@@ -180,11 +183,12 @@ import java.time.format.DateTimeFormatter
 }
 
 @Composable fun AutoEntryReview(review: AutoEntryViewModel.Review,busy: Boolean,error: String?,cancel: ()->Unit,
-    save: (String,String,String,String,String,Boolean,String?)->Unit,ignore: ()->Unit,split: (String)->Unit = {}) {
+    save: (String,String,String,String,String,Boolean,String?)->Unit,ignore: ()->Unit,split: (String)->Unit = {},saveNamed: ((String,String,String,String,String,Boolean,String?,String)->Unit)? = null) {
     val c=review.candidate
     var splitId by remember {mutableStateOf<String?>(null)}
+    var title by rememberSaveable{mutableStateOf(review.entry?.title ?: c.suggestedTitle)}
     var type by rememberSaveable{mutableStateOf(review.entry?.type ?: c.type ?: "expense")}
-    var category by rememberSaveable{mutableStateOf(review.entry?.categoryId ?: if(c.refund) review.categories.firstOrNull{it.name=="退款"&&it.type=="income"}?.id.orEmpty() else "")}
+    var category by rememberSaveable{mutableStateOf(review.entry?.categoryId ?: c.suggestedCategory.takeIf { it.isNotEmpty() } ?: if(c.refund) review.categories.firstOrNull{it.name=="退款"&&it.type=="income"}?.id.orEmpty() else "")}
     var amount by rememberSaveable{mutableStateOf((review.entry?.amountFen ?: c.amountFen)?.let{Rules.money(it)}.orEmpty())}
     var date by rememberSaveable{mutableStateOf(review.entry?.date ?: c.date)}
     var note by rememberSaveable{mutableStateOf(review.entry?.note ?: c.note)}
@@ -201,6 +205,7 @@ import java.time.format.DateTimeFormatter
             }
         }
         item {Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf("expense" to "支出","income" to "收入").forEach{(value,label)->FilterChip(selected=type==value,onClick={type=value;category="";replace=null},enabled=!busy,label={Text(label)})}}}
+        item {OutlinedTextField(title,{title=it},label={Text("账目名称（最多40字，可留空）")},enabled=!busy,modifier=Modifier.fillMaxWidth().testTag("auto-title"))}
         item {OutlinedTextField(amount,{amount=it;replace=null},label={Text("金额（元）")},enabled=!busy,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.fillMaxWidth().testTag("auto-amount"))}
         item {OutlinedTextField(date,{date=it;replace=null},label={Text("日期（YYYY-MM-DD）")},enabled=!busy,modifier=Modifier.fillMaxWidth())}
         item {Text("必须选择分类")}
@@ -219,7 +224,7 @@ import java.time.format.DateTimeFormatter
         }
         item {
             error?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-            Button(onClick={save(type,category,amount,date,note,rememberMerchant,replace)},enabled=!busy&&category.isNotEmpty()&&amount.isNotBlank(),modifier=Modifier.fillMaxWidth().testTag("auto-confirm")) {Text(if(c.status=="booked" || c.status=="merged") "保存修改" else if(replace!=null) "旧账移入回收站并确认新账" else if(review.matches.isNotEmpty()) "确认新增，保留两笔" else "确认入账")}
+            Button(onClick={if(saveNamed!=null) saveNamed(type,category,amount,date,note,rememberMerchant,replace,title) else save(type,category,amount,date,note,rememberMerchant,replace)},enabled=!busy&&category.isNotEmpty()&&amount.isNotBlank(),modifier=Modifier.fillMaxWidth().testTag("auto-confirm")) {Text(if(c.status=="booked" || c.status=="merged") "保存修改" else if(replace!=null) "旧账移入回收站并确认新账" else if(review.matches.isNotEmpty()) "确认新增，保留两笔" else "确认入账")}
             if(c.status=="pending") OutlinedButton(onClick=ignore,enabled=!busy,modifier=Modifier.fillMaxWidth()) {Text("不入账，保留原有账目")}
             TextButton(onClick=cancel,enabled=!busy){Text("返回列表")}
         }

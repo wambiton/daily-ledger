@@ -12,7 +12,7 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
     suspend fun receive(notice: PaymentNotice, target: PaymentCandidate, ledger: LedgerDatabase): PaymentCandidate? = lock.withLock {
         inbox.withTransaction {
             if(inbox.auto().candidate(notice.id)!=null) return@withTransaction null
-            var candidate=target.copy(source=notice.source,transactionAt=notice.transactionAt,channel=notice.channel,cardTail=notice.cardTail,transactionId=notice.transactionId,
+            var candidate=target.copy(source=notice.source,transactionAt=notice.transactionAt,channel=notice.channel,cardTail=notice.cardTail,transactionId=notice.transactionId,uncertain=notice.uncertain,
                 status=if(notice.excluded) "ignored" else "pending",reason=if(notice.excluded) "充值、提现或本人账户互转不计收支" else "请确认分类与通知内容")
             inbox.auto().insert(candidate)
             if(notice.excluded) return@withTransaction candidate
@@ -32,8 +32,16 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
                     ledger.withTransaction {
                         val existing=root.entryId?.let {ledger.ledger().entry(it)}
                         if(root.status=="booked" && (existing==null || existing.deletedAt!=null || existing.owner!=root.owner || existing.amountFen!=root.amountFen || existing.type!=root.type || existing.date!=root.date)) return@withTransaction
-                        val category=categoryFor(root,ledger,true) ?: return@withTransaction
-                        val entry=existing ?: write(root,ledger,category.id,root.type!!,root.amountFen!!,root.date,root.note,null)
+                        val naming=naming(root,ledger)
+                        // A second source must not silently confirm a first-time naming rule.
+                        if(existing==null && naming is NamingDecision.Review) {
+                            merged=candidate.copy(status="linked",mergedInto=root.id,reason="已关联同笔来源，等待原记录确认；尚未计入统计")
+                            inbox.auto().update(merged!!)
+                            return@withTransaction
+                        }
+                        val automatic=(naming as? NamingDecision.Automatic)?.rule
+                        val category=automatic?.let { ledger.ledger().category(it.categoryId) } ?: categoryFor(root,ledger,true) ?: return@withTransaction
+                        val entry=existing ?: write(root,ledger,category.id,root.type!!,root.amountFen!!,root.date,root.note,null,automatic?.title.orEmpty())
                         inbox.auto().update(root.copy(status="booked",entryId=entry.id,reason="已合并银行短信与支付通知，仅计一笔；可查看来源并拆分"))
                         merged=candidate.copy(status="merged",entryId=entry.id,mergedInto=root.id,reason="渠道、金额、收支、时间与商户或交易号一致且候选唯一，已合并；若是两次消费可拆分")
                         inbox.auto().update(merged!!)
@@ -41,18 +49,36 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
                     if(merged!=null) return@withTransaction merged
                 }
             }
-            val category=categoryFor(candidate,ledger,notice.source=="sms")
+            val naming=naming(candidate,ledger)
+            val rule=when(naming) { is NamingDecision.Automatic -> naming.rule; is NamingDecision.Review -> naming.rule; else -> null }
+            if(rule!=null) candidate=candidate.copy(suggestedTitle=rule.title,suggestedCategory=rule.categoryId,ruleSignature=rule.signature())
+            if(naming is NamingDecision.Review) {
+                candidate=candidate.copy(reason="命名规则待确认："+when(naming.reason) {
+                    NamingReviewReason.FIRST_CONFIRMATION -> "首次匹配此商户，确认后按已授权规则自动记账"
+                    NamingReviewReason.AUTOMATIC_NOT_ALLOWED -> "此规则仅建议名称，每次需要确认"
+                    NamingReviewReason.RULE_CONFLICT -> "多条规则冲突，请自行确认名称和分类"
+                    else -> "支付信息或商户不明确，请核对"
+                })
+                inbox.auto().update(candidate);return@withTransaction candidate
+            }
+            val category=rule?.let { ledger.ledger().category(it.categoryId) } ?: categoryFor(candidate,ledger,notice.source=="sms")
             ledger.withTransaction {
                 val duplicate=matches(candidate,ledger)
                 if(duplicate.isNotEmpty() && notice.source!="sms") candidate=candidate.copy(reason="疑似重复：当前账本已有同日期、金额和收支类型的账目")
                 else if(category!=null && !notice.uncertain) {
-                    val entry=write(candidate,ledger,category.id,notice.type!!,notice.amountFen!!,notice.date,notice.note,null)
+                    val entry=write(candidate,ledger,category.id,notice.type!!,notice.amountFen!!,notice.date,notice.note,null,rule?.title.orEmpty())
                     candidate=candidate.copy(status="booked",entryId=entry.id,reason="已自动记账，可在指定账本查看或修改")
                 }
             }
             inbox.auto().update(candidate)
             candidate
         }
+    }
+    private fun notice(c: PaymentCandidate)=PaymentNotice(c.id,c.platform,c.date,c.amountFen,c.type,c.merchant,c.note,c.refund,false,c.uncertain,
+        c.source,c.transactionAt,c.channel,c.cardTail,c.transactionId)
+    private suspend fun naming(c: PaymentCandidate,ledger: LedgerDatabase): NamingDecision {
+        val stored=NamingRuleStore(ledger,c.databaseName,c.owner).snapshot()
+        return SmartRuleMatcher.evaluate(c.databaseName,c.owner,notice(c),stored.map {it.rule},stored.flatMap {it.trusted}.toSet())
     }
     private suspend fun categoryFor(c: PaymentCandidate, ledger: LedgerDatabase, fallback: Boolean): Category? {
         val categories=ledger.ledger().categorySnapshot(c.owner)
@@ -100,23 +126,43 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
         .filter{it.date==candidate.date && it.amountFen==candidate.amountFen && it.type==candidate.type && it.id!=candidate.id}
 
     suspend fun confirm(candidate: PaymentCandidate, ledger: LedgerDatabase, categoryId: String, type: String, amount: String,
-        date: String, note: String, remember: Boolean, replaceId: String?=null): PaymentCandidate = lock.withLock {
+        date: String, note: String, remember: Boolean, replaceId: String?=null, title: String?=null): PaymentCandidate = lock.withLock {
         val fresh=requireNotNull(inbox.auto().candidate(candidate.id))
         require(fresh.status=="pending") {"此记录已处理，请刷新"}
         val value=Rules.amount(amount);Rules.date(LocalDate.parse(date));Rules.note(note)
-        val entry=write(fresh,ledger,categoryId,type,value,date,note,replaceId)
+        val chosenTitle=Rules.title(title ?: fresh.suggestedTitle)
+        val entry=ledger.withTransaction {
+            val entry=write(fresh,ledger,categoryId,type,value,date,note,replaceId,chosenTitle)
+            val decision=naming(fresh,ledger)
+            val current=(decision as? NamingDecision.Review)?.rule
+            if(current!=null && current.signature()==fresh.ruleSignature && current.title==chosenTitle && current.categoryId==categoryId &&
+                type==fresh.type && value==fresh.amountFen && date==fresh.date && replaceId==null &&
+                entry.title==chosenTitle && entry.categoryId==categoryId && entry.deletedAt==null)
+                NamingRuleStore(ledger,fresh.databaseName,fresh.owner).recordConfirmation(notice(fresh))
+            entry
+        }
         val saved=fresh.copy(status="booked",entryId=entry.id,reason="已确认入账")
-        inbox.auto().update(saved)
+        inbox.withTransaction {
+            inbox.auto().update(saved)
+            inbox.auto().children(fresh.id).filter {it.status=="linked"}.forEach {
+                inbox.auto().update(it.copy(status="merged",entryId=entry.id,reason="原记录已确认，同笔来源仅计一笔"))
+            }
+        }
         if(remember && fresh.merchant.isNotBlank()) inbox.auto().map(MerchantCategory(fresh.databaseName,fresh.owner,fresh.platform,fresh.merchant,type,categoryId))
         saved
     }
     suspend fun ignore(id: String) = lock.withLock {
         val candidate=requireNotNull(inbox.auto().candidate(id))
         require(candidate.status=="pending")
-        inbox.auto().update(candidate.copy(status="ignored",reason="用户选择不入账"))
+        inbox.withTransaction {
+            inbox.auto().update(candidate.copy(status="ignored",reason="用户选择不入账"))
+            inbox.auto().children(id).filter {it.status=="linked"}.forEach {
+                inbox.auto().update(it.copy(status="ignored",reason="原记录已选择不入账"))
+            }
+        }
     }
     /** Deterministic entry ID and imported source survive a crash between the two databases. */
-    private suspend fun write(c: PaymentCandidate,db: LedgerDatabase,category: String,type: String,amount: Long,date: String,note: String,replace: String?): Entry = db.withTransaction {
+    private suspend fun write(c: PaymentCandidate,db: LedgerDatabase,category: String,type: String,amount: Long,date: String,note: String,replace: String?,title: String=""): Entry = db.withTransaction {
         val dao=db.ledger()
         dao.entry(c.id)?.let { existing -> require(existing.owner==c.owner);return@withTransaction existing }
         require(c.id !in dao.importedSources(c.owner)) {"此通知对应账目已处理，不能重复入账"}
@@ -127,7 +173,7 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
             LedgerRepository(db,c.owner).delete(replace)
         }
         val now=System.currentTimeMillis()
-        val entry=Entry(c.id,c.owner,type,category,amount,date,note,now,now)
+        val entry=Entry(c.id,c.owner,type,category,amount,date,note,now,now,title=Rules.title(title))
         dao.upsertEntry(entry)
         dao.enqueue(PendingOperation(UUID.randomUUID().toString(),c.owner,entry.id,"entry","upsert",0,"{}",now))
         dao.markImported(ImportedSource(c.owner,c.id))

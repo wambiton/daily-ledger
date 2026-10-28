@@ -1,0 +1,89 @@
+package com.personal.ledger
+
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import com.personal.ledger.data.*
+import com.personal.ledger.domain.Rules
+import kotlinx.coroutines.runBlocking
+import org.junit.*
+import org.junit.Assert.*
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.time.LocalDateTime
+import java.util.UUID
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk=[28])
+class NamingEntryTest {
+    private lateinit var db: LedgerDatabase
+    private lateinit var inbox: AutoEntryDatabase
+    private lateinit var processor: AutoEntryProcessor
+    private lateinit var rule: SmartNamingRule
+    private lateinit var store: NamingRuleStore
+    private fun notice(id: String="first", sms: Boolean=false) = PaymentNotice(id, if(sms) "招商银行短信" else "支付宝", "2026-10-26",850,"expense","模拟食堂","模拟支付",false,false,false,
+        source=if(sms) "sms" else "notification",transactionAt=LocalDateTime.parse("2026-10-26T07:30:00").atZone(Rules.zone).toInstant().toEpochMilli(),channel="支付宝")
+    private suspend fun receive(n: PaymentNotice) = processor.receive(n,PaymentCandidate(n.id,"naming.db","a","模拟",n.platform,n.date,n.amountFen,n.type,n.merchant,n.note,n.refund,"pending",""),db)!!
+    @Before fun setup() = runBlocking {
+        val context=ApplicationProvider.getApplicationContext<android.content.Context>()
+        db=Room.inMemoryDatabaseBuilder(context,LedgerDatabase::class.java).build()
+        inbox=Room.inMemoryDatabaseBuilder(context,AutoEntryDatabase::class.java).build()
+        LedgerRepository(db,"a").seedDefaults()
+        rule=SmartNamingRule(UUID.randomUUID().toString(),"naming.db","a","早餐",db.ledger().categorySnapshot("a").first{it.type=="expense"}.id,channel="支付宝",allowAutomatic=true)
+        store=NamingRuleStore(db,"naming.db","a");store.save(rule)
+        processor=AutoEntryProcessor(inbox)
+    }
+    @After fun close() { db.close();inbox.close() }
+    private suspend fun confirm(c: PaymentCandidate,title: String="早餐") = processor.confirm(c,db,rule.categoryId,"expense","8.50",c.date,c.note,false,title=title)
+
+    @Test fun firstConfirmationThenChangedAmountAutomaticAndDifferentMerchantWaits() = runBlocking {
+        val first=receive(notice())
+        assertEquals("pending",first.status);assertEquals("早餐",first.suggestedTitle)
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+        confirm(first)
+        assertEquals("早餐",db.ledger().entry(first.id)!!.title)
+        assertEquals(1,store.snapshot().single().trusted.size)
+        val next=receive(notice("next").copy(amountFen=900))
+        assertEquals("booked",next.status);assertEquals("早餐",db.ledger().entry(next.id)!!.title)
+        assertEquals("pending",receive(notice("other").copy(merchant="另一家店",amountFen=1000)).status)
+        assertEquals(1750L,db.ledger().entrySnapshot("a").sumOf {it.amountFen})
+    }
+    @Test fun changedNameOrRuleDoesNotGrantFutureTrust() = runBlocking {
+        val first=receive(notice());confirm(first,"偶尔加餐")
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+        assertEquals("偶尔加餐",db.ledger().entry(first.id)!!.title)
+        val pending=receive(notice("second").copy(amountFen=850))
+        store.save(rule.copy(title="早饭"))
+        confirm(pending)
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+    }
+    @Test fun secondSourceCannotBypassFirstConfirmationAndLinkedSourcesBecomeOneEntry() = runBlocking {
+        val first=receive(notice(sms=true))
+        val second=receive(notice("platform"))
+        assertEquals("pending",first.status);assertEquals("linked",second.status)
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+        confirm(first)
+        val linked=inbox.auto().candidate(second.id)!!
+        assertEquals("merged",linked.status);assertEquals(first.id,linked.entryId)
+        assertEquals(1,db.ledger().entrySnapshot("a").size)
+        assertTrue(runCatching {confirm(first)}.isFailure)
+        processor.split(linked.id,db)
+        assertEquals(2,db.ledger().entrySnapshot("a").size)
+    }
+    @Test fun ignoredRootAlsoIgnoresLinkedEvidenceWithoutTrust() = runBlocking {
+        val root=receive(notice())
+        val child=receive(notice("sms",true))
+        assertEquals("linked",child.status)
+        processor.ignore(root.id)
+        assertEquals("ignored",inbox.auto().candidate(child.id)!!.status)
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+    }
+    @Test fun suggestionOnlyRulesNeverAutomaticallyConfirmThroughSms() = runBlocking {
+        store.save(rule.copy(allowAutomatic=false))
+        val first=receive(notice(sms=true));confirm(first)
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+        assertEquals("pending",receive(notice("next",true).copy(amountFen=900)).status)
+        assertEquals(1,db.ledger().entrySnapshot("a").size)
+    }
+}

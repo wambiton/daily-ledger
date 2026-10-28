@@ -25,6 +25,23 @@ class AutoEntryFlowTest {
         ledger=Room.databaseBuilder(context,LedgerDatabase::class.java,"auto-ledger-${UUID.randomUUID()}.db").build()
     }
     @After fun close() {inbox.close();ledger.close()}
+    @Test fun namingEditorRequiresExplicitFuturePermission() {
+        val category=Category(UUID.randomUUID().toString(),"a","expense","餐饮",null)
+        val initial=SmartNamingRule(UUID.randomUUID().toString(),"synthetic.db","a","早餐",category.id)
+        var saved: SmartNamingRule?=null
+        ui.setContent {LedgerTheme {NamingRuleEditor(initial,listOf(category),false,null,{}, {saved=it})}}
+        ui.onNodeWithTag("naming-title").performTextClearance()
+        ui.onNodeWithTag("naming-title").performTextInput("午餐")
+        ui.onNodeWithTag("naming-editor").performScrollToNode(hasTestTag("naming-automatic"))
+        ui.onNodeWithTag("naming-automatic").assertIsOff()
+        ui.onNodeWithTag("naming-automatic").performClick()
+        ui.onNodeWithTag("naming-editor").performScrollToNode(hasTestTag("naming-save"))
+        ui.onNodeWithTag("naming-save").performClick()
+        assertEquals("午餐",saved!!.title)
+        assertTrue(saved!!.allowAutomatic)
+        assertEquals(category.id,saved!!.categoryId)
+        runBlocking {assertTrue(ledger.ledger().entrySnapshot("a").isEmpty())}
+    }
     @Test fun diagnosticsKeepRecognizedMessageSeparateFromPendingAccounting() {
         val c=PaymentCandidate("diagnostic","synthetic.db","a","原指定模拟账本","支付宝","2026-10-23",1230,"expense","测试店","模拟消息",false,"pending","分类尚未确认",receivedAt=1792713600000L)
         var opened: PaymentCandidate?=null

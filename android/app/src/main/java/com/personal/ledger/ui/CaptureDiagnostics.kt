@@ -14,6 +14,7 @@ import java.time.format.DateTimeFormatter
 internal fun captureRecordResult(status: String?): String = when(status) {
     "booked" -> "已入账记录"
     "merged" -> "已合并来源，只计一笔"
+    "linked" -> "已关联来源，等待原记录确认"
     "pending" -> "待确认，尚未计入统计"
     "ignored" -> "已忽略，不计入统计"
     else -> "尚无处理记录，不能判断是否漏记"
@@ -36,7 +37,7 @@ internal fun captureTime(time: Long): String = if(time<=0) "尚无记录" else
             if(latest!=null) {
                 Text("该记录建立于 ${captureTime(latest.receivedAt)} · 目标：${latest.bookLabel}",style=MaterialTheme.typography.bodySmall)
                 Text(latest.reason,style=MaterialTheme.typography.bodySmall)
-                if(latest.status!="ignored") TextButton(onClick={open(latest)}) {Text(if(latest.status=="pending") "处理这笔待确认" else "查看账目与来源")}
+                if(latest.status!="ignored") TextButton(onClick={open(latest)}) {Text(if(latest.status in setOf("pending","linked")) "处理这笔待确认" else "查看账目与来源")}
             }
             if(recognized>0) Text("识别时间不等于入账时间；新消息与下方记录可能不是同一笔。入账记录反映处理结果，之后仍可手动修改或删除账目。",style=MaterialTheme.typography.bodySmall)
         }

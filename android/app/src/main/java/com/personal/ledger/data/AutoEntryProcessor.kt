@@ -12,7 +12,7 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
     suspend fun receive(notice: PaymentNotice, target: PaymentCandidate, ledger: LedgerDatabase): PaymentCandidate? = lock.withLock {
         inbox.withTransaction {
             if(inbox.auto().candidate(notice.id)!=null) return@withTransaction null
-            var candidate=target.copy(source=notice.source,transactionAt=notice.transactionAt,channel=notice.channel,cardTail=notice.cardTail,
+            var candidate=target.copy(source=notice.source,transactionAt=notice.transactionAt,channel=notice.channel,cardTail=notice.cardTail,transactionId=notice.transactionId,
                 status=if(notice.excluded) "ignored" else "pending",reason=if(notice.excluded) "充值、提现或本人账户互转不计收支" else "请确认分类与通知内容")
             inbox.auto().insert(candidate)
             if(notice.excluded) return@withTransaction candidate

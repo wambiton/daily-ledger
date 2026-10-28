@@ -14,7 +14,8 @@ data class PaymentCandidate(@PrimaryKey val id: String, val databaseName: String
     @ColumnInfo(defaultValue="''") val channel: String="",
     @ColumnInfo(defaultValue="''") val cardTail: String="",
     val mergedInto: String?=null,
-    @ColumnInfo(defaultValue="0") val mergeDisabled: Boolean=false)
+    @ColumnInfo(defaultValue="0") val mergeDisabled: Boolean=false,
+    @ColumnInfo(defaultValue="''") val transactionId: String="")
 
 @Entity(tableName="merchant_categories",primaryKeys=["databaseName","owner","platform","merchant","type"])
 data class MerchantCategory(val databaseName: String,val owner: String,val platform: String,val merchant: String,val type: String,val categoryId: String)
@@ -33,7 +34,7 @@ data class MerchantCategory(val databaseName: String,val owner: String,val platf
     @Upsert suspend fun map(value: MerchantCategory)
 }
 
-@Database(entities=[PaymentCandidate::class,MerchantCategory::class],version=2,exportSchema=true)
+@Database(entities=[PaymentCandidate::class,MerchantCategory::class],version=3,exportSchema=true,autoMigrations=[AutoMigration(from=2,to=3)])
 abstract class AutoEntryDatabase: RoomDatabase() {
     abstract fun auto(): AutoEntryDao
     companion object {

@@ -58,6 +58,19 @@ class BankMergeTest {
         assertTrue(runCatching {processor.split(second.id,ledger)}.isFailure)
         assertNotNull(ledger.ledger().entry(first.entryId!!))
     }
+    @Test fun lateEvidencePreservesUserTitleAndBothSources() = runBlocking {
+        val first=processor.receive(sms(),target(sms()),ledger)!!
+        val original=ledger.ledger().entry(first.entryId!!)!!
+        val renamed=LedgerRepository(ledger,"a").save(original.id,original.type,original.categoryId,"12.30",
+            java.time.LocalDate.parse(original.date),original.note,"午餐")
+        val notice=platform().copy(transactionId="1234567890123456")
+        val second=processor.receive(notice,target(notice),ledger)!!
+        assertEquals("merged",second.status)
+        assertEquals("1234567890123456",inbox.auto().candidate(second.id)!!.transactionId)
+        assertEquals(renamed,ledger.ledger().entry(original.id))
+        assertEquals(1,ledger.ledger().entrySnapshot("a").size)
+        assertEquals(first.id,second.mergedInto)
+    }
     @Test fun pendingPlatformFirstIsResolvedByBankEvidence() = runBlocking {
         assertEquals("pending",processor.receive(platform(),target(platform()),ledger)!!.status)
         assertEquals("merged",processor.receive(sms(),target(sms()),ledger)!!.status)

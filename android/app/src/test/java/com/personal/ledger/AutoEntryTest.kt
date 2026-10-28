@@ -47,6 +47,22 @@ class AutoEntryTest {
         val refundText="退款到账，3元\n交易单号：1234567890123456"
         assertNotEquals(notice("partial-one",refundText).id,notice("partial-two",refundText).id)
     }
+    @Test fun transactionIdentityPersistsAndKeepsPaymentAndRefundSeparate() = runBlocking {
+        val repo=LedgerRepository(ledger,"a");repo.seedDefaults()
+        val order="1234567890123456"
+        val first=notice("source-one","支付成功，支出18.50元\n商户：校园食堂\n交易单号：$order")
+        val retry=notice("source-two","支付成功，支出18.50元\n商户：校园食堂\n交易单号：$order")
+        assertEquals(order,first.transactionId);assertEquals(first.id,retry.id)
+        val processor=AutoEntryProcessor(inbox)
+        processor.receive(first,target(first),ledger)
+        assertEquals(order,inbox.auto().candidate(first.id)!!.transactionId)
+        assertNull(processor.receive(retry,target(retry),ledger))
+        val refund=notice("refund","退款到账，3元\n交易单号：$order")
+        assertEquals("",refund.transactionId)
+        val refundWithId=notice("refund-id","退款到账，3元\n退款单号：9876543210987654")
+        assertEquals("9876543210987654",refundWithId.transactionId)
+        assertNotEquals(first.id,refundWithId.id)
+    }
     @Test fun mappingThenAutomaticEntryAndRepeatedNotificationStayIdempotent() = runBlocking {
         val repo=LedgerRepository(ledger,"a");repo.seedDefaults()
         val cat=ledger.ledger().categorySnapshot("a").first{it.type=="expense"}

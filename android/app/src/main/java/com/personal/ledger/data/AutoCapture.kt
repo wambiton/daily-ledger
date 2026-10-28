@@ -27,7 +27,7 @@ object AutoCapture {
         val input=workDataOf("id" to n.id,"db" to target.first,"owner" to target.second,"label" to target.third,
             "platform" to n.platform,"date" to n.date,"amount" to (n.amountFen ?: -1),"type" to (n.type ?: ""),"merchant" to n.merchant,
             "note" to n.note,"refund" to n.refund,"excluded" to n.excluded,"uncertain" to n.uncertain,
-            "source" to n.source,"transactionAt" to n.transactionAt,"channel" to n.channel,"cardTail" to n.cardTail)
+            "source" to n.source,"transactionAt" to n.transactionAt,"channel" to n.channel,"cardTail" to n.cardTail,"transactionId" to n.transactionId)
         return WorkManager.getInstance(context).enqueueUniqueWork("payment-notice/${n.id}",ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<AutoCaptureWorker>().setInputData(input).build())
     }
@@ -96,8 +96,8 @@ class AutoCaptureWorker(context: Context,params: WorkerParameters): CoroutineWor
     override suspend fun doWork(): Result {
         fun text(key: String)=inputData.getString(key).orEmpty()
         val name=text("db");if(!AutoCapture.validName(name)) return Result.failure()
-        val n=PaymentNotice(text("id"),text("platform"),text("date"),inputData.getLong("amount",-1).takeIf{it>0},text("type").takeIf{it.isNotEmpty()},text("merchant"),text("note"),inputData.getBoolean("refund",false),inputData.getBoolean("excluded",false),inputData.getBoolean("uncertain",true),source=text("source").ifEmpty {"notification"},transactionAt=inputData.getLong("transactionAt",0),channel=text("channel"),cardTail=text("cardTail"))
-        val c=PaymentCandidate(n.id,name,text("owner"),text("label"),n.platform,n.date,n.amountFen,n.type,n.merchant,n.note,n.refund,"pending","",source=n.source,transactionAt=n.transactionAt,channel=n.channel,cardTail=n.cardTail)
+        val n=PaymentNotice(text("id"),text("platform"),text("date"),inputData.getLong("amount",-1).takeIf{it>0},text("type").takeIf{it.isNotEmpty()},text("merchant"),text("note"),inputData.getBoolean("refund",false),inputData.getBoolean("excluded",false),inputData.getBoolean("uncertain",true),source=text("source").ifEmpty {"notification"},transactionAt=inputData.getLong("transactionAt",0),channel=text("channel"),cardTail=text("cardTail"),transactionId=text("transactionId"))
+        val c=PaymentCandidate(n.id,name,text("owner"),text("label"),n.platform,n.date,n.amountFen,n.type,n.merchant,n.note,n.refund,"pending","",source=n.source,transactionAt=n.transactionAt,channel=n.channel,cardTail=n.cardTail,transactionId=n.transactionId)
         val inbox=AutoEntryDatabase.get(applicationContext)
         if(!applicationContext.getDatabasePath(name).exists()) {
             inbox.auto().insert(c.copy(reason="原指定账本暂不可用，请保留此记录并恢复账本"));return Result.success()

@@ -18,7 +18,14 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
             if(notice.excluded) return@withTransaction candidate
             if(!notice.uncertain) {
                 val possible=inbox.auto().nearby(candidate.databaseName,candidate.owner,candidate.transactionAt-300000,candidate.transactionAt+300000)
-                    .filter { crossSourceMatch(candidate,it) }.sortedWith(compareBy<PaymentCandidate> {kotlin.math.abs(it.transactionAt-candidate.transactionAt)}.thenBy {it.id})
+                    .filter { crossSourceMatch(candidate,it) }
+                    .filter { inbox.auto().children(it.id).isEmpty() }
+                // Time proximity alone cannot choose between separate purchases. Keep all evidence.
+                if(possible.isNotEmpty() && (possible.size!=1 || !corroborates(candidate,possible.single()))) {
+                    candidate=candidate.copy(reason="疑似重复：附近存在同金额的支付来源，但商户或交易身份不足以唯一确认，请核对后处理")
+                    inbox.auto().update(candidate)
+                    return@withTransaction candidate
+                }
                 for(root in possible) {
                     if(inbox.auto().children(root.id).isNotEmpty()) continue
                     var merged: PaymentCandidate?=null
@@ -28,7 +35,7 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
                         val category=categoryFor(root,ledger,true) ?: return@withTransaction
                         val entry=existing ?: write(root,ledger,category.id,root.type!!,root.amountFen!!,root.date,root.note,null)
                         inbox.auto().update(root.copy(status="booked",entryId=entry.id,reason="已合并银行短信与支付通知，仅计一笔；可查看来源并拆分"))
-                        merged=candidate.copy(status="merged",entryId=entry.id,mergedInto=root.id,reason="同渠道、金额、收支及5分钟内时间匹配，已合并；若是两次消费可拆分")
+                        merged=candidate.copy(status="merged",entryId=entry.id,mergedInto=root.id,reason="渠道、金额、收支、时间与商户或交易号一致且候选唯一，已合并；若是两次消费可拆分")
                         inbox.auto().update(merged!!)
                     }
                     if(merged!=null) return@withTransaction merged
@@ -66,6 +73,12 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
             a.amountFen!=null && a.amountFen==b.amountFen && a.type!=null && a.type==b.type && a.refund==b.refund &&
             kotlin.math.abs(a.transactionAt-b.transactionAt)<=300000 &&
             (a.cardTail.isEmpty() || b.cardTail.isEmpty() || a.cardTail==b.cardTail)
+    }
+    /** IDs are only comparable when both sources carry a payment identity; do not fuzzy-match merchants. */
+    private fun corroborates(a: PaymentCandidate,b: PaymentCandidate): Boolean {
+        if(a.transactionId.isNotBlank() && b.transactionId.isNotBlank()) return a.transactionId==b.transactionId
+        val merchant=a.merchant.trim()
+        return merchant.isNotEmpty() && merchant==b.merchant.trim()
     }
     suspend fun split(id: String,ledger: LedgerDatabase): PaymentCandidate = lock.withLock {
         inbox.withTransaction {

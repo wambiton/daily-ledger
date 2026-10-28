@@ -87,6 +87,45 @@ class BankMergeTest {
         assertEquals(1,inbox.auto().children("sms").size)
         assertEquals(1,inbox.auto().children("sms2").size)
     }
+    @Test fun multipleBankPaymentsStaySeparateAndNotificationWaits() = runBlocking {
+        val first=sms("bank-one")
+        val second=sms("bank-two").copy(transactionAt=time+60000)
+        processor.receive(first,target(first),ledger)
+        processor.receive(second,target(second),ledger)
+        val incoming=platform().copy(transactionAt=time+59000)
+        val result=processor.receive(incoming,target(incoming),ledger)!!
+        assertEquals("pending",result.status)
+        assertTrue(result.reason.contains("唯一确认"))
+        assertEquals(2,ledger.ledger().entrySnapshot("a").size)
+        assertTrue(inbox.auto().children(first.id).isEmpty())
+        assertTrue(inbox.auto().children(second.id).isEmpty())
+    }
+    @Test fun multiplePlatformPaymentsDoNotLetSmsChooseNearest() = runBlocking {
+        for(n in listOf(platform("one"),platform("two").copy(transactionAt=time+60000)))
+            processor.receive(n,target(n),ledger)
+        val incoming=sms().copy(transactionAt=time+59000)
+        assertEquals("pending",processor.receive(incoming,target(incoming),ledger)!!.status)
+        assertTrue(ledger.ledger().entrySnapshot("a").isEmpty())
+    }
+    @Test fun missingOrConflictingMerchantDoesNotMergeOrAutoBookSms() = runBlocking {
+        processor.receive(platform(),target(platform()),ledger)
+        val incoming=sms().copy(merchant="另一家店")
+        val result=processor.receive(incoming,target(incoming),ledger)!!
+        assertEquals("pending",result.status)
+        assertTrue(ledger.ledger().entrySnapshot("a").isEmpty())
+        processor.ignore(incoming.id)
+        val missing=sms("missing").copy(merchant="")
+        assertEquals("pending",processor.receive(missing,target(missing),ledger)!!.status)
+        assertTrue(ledger.ledger().entrySnapshot("a").isEmpty())
+    }
+    @Test fun conflictingTransactionIdsOverrideMatchingMerchant() = runBlocking {
+        val bank=sms().copy(transactionId="1234567890123456")
+        processor.receive(bank,target(bank),ledger)
+        val incoming=platform().copy(transactionId="9876543210987654")
+        assertEquals("pending",processor.receive(incoming,target(incoming),ledger)!!.status)
+        assertEquals(1,ledger.ledger().entrySnapshot("a").size)
+        assertTrue(inbox.auto().children(bank.id).isEmpty())
+    }
     @Test fun differentOwnerChannelTimeAndRefundDoNotMerge() = runBlocking {
         processor.receive(sms(),target(sms()),ledger)
         val notices=listOf(platform("wx").copy(platform="微信",channel="微信"),

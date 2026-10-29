@@ -86,4 +86,44 @@ class NamingEntryTest {
         assertEquals("pending",receive(notice("next",true).copy(amountFen=900)).status)
         assertEquals(1,db.ledger().entrySnapshot("a").size)
     }
+
+    @Test fun notificationRenameThenConfirmIsIdempotentAndDoesNotTrustChangedTitle() = runBlocking {
+        val first=receive(notice())
+        processor.notificationAction(first.id,"rename",db,"naming.db","午餐")
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+        repeat(2) {processor.notificationAction(first.id,"confirm",db,"naming.db")}
+        processor.notificationAction(first.id,"rename",db,"naming.db","不可覆盖")
+        processor.notificationAction(first.id,"ignore",db,"naming.db")
+        assertEquals(1,db.ledger().entrySnapshot("a").size)
+        assertEquals("午餐",db.ledger().entry(first.id)!!.title)
+        assertEquals("booked",inbox.auto().candidate(first.id)!!.status)
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+    }
+    @Test fun notificationIgnoreLinkedSourceCannotBeReconfirmed() = runBlocking {
+        val root=receive(notice())
+        val child=receive(notice("sms",true))
+        processor.notificationAction(child.id,"ignore",db,"naming.db")
+        processor.notificationAction(root.id,"confirm",db,"naming.db")
+        assertEquals("ignored",inbox.auto().candidate(root.id)!!.status)
+        assertEquals("ignored",inbox.auto().candidate(child.id)!!.status)
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+    }
+    @Test fun notificationRejectsWrongBookAndChangedRules() = runBlocking {
+        val first=receive(notice())
+        assertTrue(runCatching {processor.notificationAction(first.id,"confirm",db,"other.db")}.isFailure)
+        store.save(rule.copy(title="新规则"))
+        assertEquals("pending",processor.notificationAction(first.id,"confirm",db,"naming.db")!!.status)
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+    }
+    @Test fun notificationConfirmLinkedSourceCreatesOneEntryAndTrust() = runBlocking {
+        val first=receive(notice())
+        val child=receive(notice("sms",true))
+        processor.notificationAction(child.id,"confirm",db,"naming.db")
+        processor.notificationAction(first.id,"confirm",db,"naming.db")
+        assertEquals(1,db.ledger().entrySnapshot("a").size)
+        assertEquals("merged",inbox.auto().candidate(child.id)!!.status)
+        assertEquals(1,store.snapshot().single().trusted.size)
+    }
 }

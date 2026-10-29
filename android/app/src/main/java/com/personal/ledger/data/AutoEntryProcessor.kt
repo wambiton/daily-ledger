@@ -127,6 +127,10 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
 
     suspend fun confirm(candidate: PaymentCandidate, ledger: LedgerDatabase, categoryId: String, type: String, amount: String,
         date: String, note: String, remember: Boolean, replaceId: String?=null, title: String?=null): PaymentCandidate = lock.withLock {
+        confirmLocked(candidate,ledger,categoryId,type,amount,date,note,remember,replaceId,title)
+    }
+    private suspend fun confirmLocked(candidate: PaymentCandidate, ledger: LedgerDatabase, categoryId: String, type: String, amount: String,
+        date: String, note: String, remember: Boolean, replaceId: String?, title: String?): PaymentCandidate {
         val fresh=requireNotNull(inbox.auto().candidate(candidate.id))
         require(fresh.status=="pending") {"此记录已处理，请刷新"}
         val value=Rules.amount(amount);Rules.date(LocalDate.parse(date));Rules.note(note)
@@ -149,7 +153,7 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
             }
         }
         if(remember && fresh.merchant.isNotBlank()) inbox.auto().map(MerchantCategory(fresh.databaseName,fresh.owner,fresh.platform,fresh.merchant,type,categoryId))
-        saved
+        return saved
     }
     suspend fun ignore(id: String) = lock.withLock {
         val candidate=requireNotNull(inbox.auto().candidate(id))
@@ -160,6 +164,66 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
                 inbox.auto().update(it.copy(status="ignored",reason="原记录已选择不入账"))
             }
         }
+    }
+    /** Notification commands use saved evidence, never the currently displayed ledger. */
+    suspend fun notificationAction(id: String, action: String, ledger: LedgerDatabase,
+        databaseName: String, title: String?=null): PaymentCandidate? = lock.withLock {
+        require(action in setOf("confirm","rename","ignore"))
+        val selected=inbox.auto().candidate(id) ?: return@withLock null
+        val fresh=if(selected.status=="linked") {
+            val root=selected.mergedInto?.let {inbox.auto().candidate(it)} ?: return@withLock selected
+            require(root.databaseName==selected.databaseName && root.owner==selected.owner)
+            root
+        } else selected
+        require(fresh.databaseName==databaseName) {"原账本不一致"}
+        if(fresh.status!="pending") return@withLock fresh
+        // A previous write may have survived a crash before the inbox status was committed.
+        // Do not rename or ignore an entry already written by that attempt.
+        val existing=ledger.ledger().entry(fresh.id)
+        if(existing!=null) {
+            require(existing.owner==fresh.owner)
+            val saved=fresh.copy(status="booked",entryId=existing.id,reason="账目已保存，请在应用内查看")
+            inbox.withTransaction {
+                inbox.auto().update(saved)
+                inbox.auto().children(fresh.id).filter {it.status=="linked"}.forEach {
+                    inbox.auto().update(it.copy(status="merged",entryId=existing.id,reason="原记录已保存，同笔来源仅计一笔"))
+                }
+            }
+            return@withLock saved
+        }
+        if(action=="rename") {
+            val saved=fresh.copy(suggestedTitle=Rules.title(requireNotNull(title)),reason="名称已修改，尚未入账，请确认")
+            inbox.auto().update(saved)
+            return@withLock saved
+        }
+        if(action=="ignore") {
+            val saved=fresh.copy(status="ignored",reason="用户选择不入账")
+            inbox.withTransaction {
+                inbox.auto().update(saved)
+                inbox.auto().children(fresh.id).filter {it.status=="linked"}.forEach {
+                    inbox.auto().update(it.copy(status="ignored",reason="原记录已选择不入账"))
+                }
+            }
+            return@withLock saved
+        }
+        val decision=naming(fresh,ledger)
+        val rule=when(decision) {
+            is NamingDecision.Review -> decision.rule.takeIf {
+                decision.reason in setOf(NamingReviewReason.FIRST_CONFIRMATION,NamingReviewReason.AUTOMATIC_NOT_ALLOWED)
+            }
+            is NamingDecision.Automatic -> decision.rule
+            else -> null
+        }
+        val category=rule?.let {ledger.ledger().category(it.categoryId)}
+        if(fresh.uncertain || fresh.amountFen==null || fresh.amountFen<=0 || fresh.type!="expense" ||
+            rule==null || rule.signature()!=fresh.ruleSignature || category==null || category.owner!=fresh.owner ||
+            category.type!=fresh.type || matches(fresh,ledger).isNotEmpty()) {
+            val saved=fresh.copy(reason="请打开应用核对金额、分类、规则或疑似重复记录，尚未入账")
+            inbox.auto().update(saved)
+            return@withLock saved
+        }
+        confirmLocked(fresh,ledger,category.id,fresh.type,
+            java.math.BigDecimal.valueOf(fresh.amountFen,2).toPlainString(),fresh.date,fresh.note,false,null,fresh.suggestedTitle)
     }
     /** Deterministic entry ID and imported source survive a crash between the two databases. */
     private suspend fun write(c: PaymentCandidate,db: LedgerDatabase,category: String,type: String,amount: Long,date: String,note: String,replace: String?,title: String=""): Entry = db.withTransaction {

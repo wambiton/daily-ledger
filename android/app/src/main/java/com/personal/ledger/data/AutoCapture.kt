@@ -38,9 +38,19 @@ object AutoCapture {
         val intent=Intent(context,MainActivity::class.java).setAction("com.personal.ledger.AUTO_ENTRY").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val pending=PendingIntent.getActivity(context,8100,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val text=if(c.status=="merged") "已与另一条支付来源合并，仅计一笔；点击检查或拆分" else if(c.status=="booked") "${c.platform}账目已保存到${c.bookLabel}，点击检查或修改" else "${c.platform}支付信息待确认，尚未计入统计和预算"
+        val publicNotification=NotificationCompat.Builder(context,"ledger-auto")
+            .setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("个人记账")
+            .setContentText("解锁后查看记账消息").build()
         try { manager.notify(c.id,8100,NotificationCompat.Builder(context,"ledger-auto").setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(if(c.status=="merged") "已合并重复来源" else if(c.status=="booked") "已自动记账" else "待确认账目").setContentText(text)
-            .setContentIntent(pending).setAutoCancel(true).build()) } catch(_: SecurityException) {}
+            .setContentIntent(pending).setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(publicNotification)
+            .apply { if(c.status=="pending") {
+                setStyle(NotificationCompat.BigTextStyle().bigText(c.reason+"；"+text))
+                addAction(AutoEntryActions.button(context,c.id,"confirm","确认"))
+                addAction(AutoEntryActions.button(context,c.id,"rename","修改名称"))
+                addAction(AutoEntryActions.button(context,c.id,"ignore","忽略本次"))
+            } }.build()) } catch(_: SecurityException) {}
     }
 }
 

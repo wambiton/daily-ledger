@@ -14,6 +14,7 @@
         <receiver android:name=".data.BankSmsReceiver" android:exported="true" android:permission="android.permission.BROADCAST_SMS">
             <intent-filter><action android:name="android.provider.Telephony.SMS_RECEIVED" /></intent-filter>
         </receiver>
+        <receiver android:name=".data.AutoEntryActionReceiver" android:exported="false" />
         <receiver android:name=".data.CancelBackupReceiver" android:exported="false" />
         <receiver android:name=".data.AutoCaptureRecoveryReceiver" android:exported="false">
             <intent-filter>

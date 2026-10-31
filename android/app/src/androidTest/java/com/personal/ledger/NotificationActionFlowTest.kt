@@ -88,4 +88,65 @@ class NotificationActionFlowTest {
             assertEquals("ignored",inbox.auto().candidate(root.id)!!.status)
         }
     }
+
+    /** Opt-in: operates the actual System UI, never other applications' notification actions. */
+    @Test fun systemNotificationRenameAndConfirm() {
+        Assume.assumeTrue(androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("notification_ui")=="true")
+        val automation=androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun find(node: android.view.accessibility.AccessibilityNodeInfo?, predicate: (android.view.accessibility.AccessibilityNodeInfo)->Boolean): android.view.accessibility.AccessibilityNodeInfo? {
+            if(node==null) return null
+            if(predicate(node)) return node
+            for(i in 0 until node.childCount) find(node.getChild(i),predicate)?.let {return it}
+            return null
+        }
+        automation.serviceInfo=automation.serviceInfo.apply {flags=flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS}
+        val marker="通知交互专项验证"
+        fun scoped(label: String): android.view.accessibility.AccessibilityNodeInfo? {
+            var node=find(automation.rootInActiveWindow) {it.text?.toString()?.contains(marker)==true}
+            while(node!=null) {
+                val match=find(node) {it.text?.toString()==label}
+                if(match!=null) return match
+                node=node.parent
+            }
+            return null
+        }
+        fun click(label: String) {
+            var found: android.view.accessibility.AccessibilityNodeInfo?=null
+            awaitState {found=scoped(label);found!=null}
+            var node=found!!
+            while(!node.isClickable && node.parent!=null) node=node.parent
+            assertTrue("Cannot click $label",node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
+        }
+        try {
+            AutoCapture.notify(context,root.copy(reason=marker))
+            assertTrue(automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS))
+            click("修改名称")
+            var editor: android.view.accessibility.AccessibilityNodeInfo?=null
+            awaitState {editor=find(automation.rootInActiveWindow) {it.isEditable && it.packageName?.toString()=="com.android.systemui"};editor!=null}
+            assertTrue(editor!!.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply {
+                putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,"系统通知改名")
+            }))
+            var send: android.view.accessibility.AccessibilityNodeInfo?=null
+            awaitState {send=find(automation.rootInActiveWindow) {it.viewIdResourceName?.endsWith(":id/remote_input_send")==true};send!=null}
+            assertNotNull("System reply send control missing",send)
+            assertTrue(send!!.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK))
+            awaitState {inbox.auto().candidate(root.id)!!.suggestedTitle=="系统通知改名"}
+            runBlocking {assertTrue(ledger.ledger().entrySnapshot(owner).isEmpty())}
+            AutoCapture.notify(context,runBlocking {inbox.auto().candidate(root.id)!!}.copy(reason=marker))
+            click("确认")
+            awaitState {inbox.auto().candidate(root.id)!!.status=="booked"}
+            runBlocking {assertEquals("系统通知改名",ledger.ledger().entrySnapshot(owner).single().title)}
+            // Dismiss only this test's completed alert so System UI does not collapse the next alert into its group.
+            manager.cancel(root.id,8100)
+            val ignored=root.copy(id=UUID.randomUUID().toString(),reason=marker)
+            runBlocking {inbox.auto().insert(ignored)}
+            AutoCapture.notify(context,ignored)
+            assertTrue(automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS))
+            try {
+                click("忽略本次")
+                awaitState {inbox.auto().candidate(ignored.id)!!.status=="ignored"}
+                runBlocking {assertEquals(1,ledger.ledger().entrySnapshot(owner).size)}
+            } finally {manager.cancel(ignored.id,8100)}
+        } finally {automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_HOME)}
+    }
 }

@@ -31,22 +31,36 @@ object AutoCapture {
         return WorkManager.getInstance(context).enqueueUniqueWork("payment-notice/${n.id}",ExistingWorkPolicy.KEEP,
             OneTimeWorkRequestBuilder<AutoCaptureWorker>().setInputData(input).build())
     }
-    fun notify(context: Context,c: PaymentCandidate) {
+    suspend fun notifyFromLedger(context: Context,c: PaymentCandidate,ledger: LedgerDatabase) {
+        val category=c.suggestedCategory.takeIf {it.isNotBlank()}?.let {ledger.ledger().category(it)}
+            ?.takeIf {it.owner==c.owner && it.type==c.type}?.name.orEmpty()
+        notify(context,c,category)
+    }
+    fun notify(context: Context,c: PaymentCandidate,categoryName: String="") {
         val manager=context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel("ledger-auto","自动记账结果",NotificationManager.IMPORTANCE_DEFAULT))
         if(!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val intent=Intent(context,MainActivity::class.java).setAction("com.personal.ledger.AUTO_ENTRY").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val pending=PendingIntent.getActivity(context,8100,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val text=if(c.status=="merged") "已与另一条支付来源合并，仅计一笔；点击检查或拆分" else if(c.status=="booked") "${c.platform}账目已保存到${c.bookLabel}，点击检查或修改" else "${c.platform}支付信息待确认，尚未计入统计和预算"
+        val isPending=c.status=="pending"
+        val amount=c.amountFen?.takeIf {it>0}?.let {"¥"+java.math.BigDecimal.valueOf(it,2).toPlainString()} ?: "金额待核对"
+        val name=c.suggestedTitle.ifBlank {c.merchant}.ifBlank {"待确认账目"}
+        val time=c.transactionAt.takeIf {it>0}?.let {
+            java.time.Instant.ofEpochMilli(it).atZone(com.personal.ledger.domain.Rules.zone)
+                .format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm"))
+        } ?: "时间待核对"
+        val direction=when(c.type) {"expense" -> "支出"; "income" -> if(c.refund) "退款收入" else "收入"; else -> "收支待核对"}
+        val details=listOf(c.channel.ifBlank {c.platform},categoryName.ifBlank {"分类待确认"},direction,time).joinToString(" · ")
         val publicNotification=NotificationCompat.Builder(context,"ledger-auto")
             .setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("个人记账")
             .setContentText("解锁后查看记账消息").build()
         try { manager.notify(c.id,8100,NotificationCompat.Builder(context,"ledger-auto").setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(if(c.status=="merged") "已合并重复来源" else if(c.status=="booked") "已自动记账" else "待确认账目").setContentText(text)
+            .setContentTitle(if(isPending) "$name · $amount" else if(c.status=="merged") "已合并重复来源" else if(c.status=="booked") "已自动记账" else "待确认账目").setContentText(if(isPending) details else text)
             .setContentIntent(pending).setAutoCancel(true)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(publicNotification)
             .apply { if(c.status=="pending") {
-                setStyle(NotificationCompat.BigTextStyle().bigText(c.reason+"；"+text))
+                setStyle(NotificationCompat.BigTextStyle().bigText(details+"\n"+c.reason+"；"+text))
                 addAction(AutoEntryActions.button(context,c.id,"confirm","确认"))
                 addAction(AutoEntryActions.button(context,c.id,"rename","修改名称"))
                 addAction(AutoEntryActions.button(context,c.id,"ignore","忽略本次"))
@@ -119,7 +133,7 @@ class AutoCaptureWorker(context: Context,params: WorkerParameters): CoroutineWor
         return try {
             LedgerRepository(ledger,c.owner).seedDefaults()
             val result=AutoEntryProcessor(inbox).receive(n,c,ledger)
-            if(result!=null && result.status!="ignored") AutoCapture.notify(applicationContext,result)
+            if(result!=null && result.status!="ignored") AutoCapture.notifyFromLedger(applicationContext,result,ledger)
             BudgetNotifications.send(applicationContext,name,BudgetRepository(ledger,c.owner).reconcile())
             Result.success()
         } catch(e: CancellationException) {throw e}

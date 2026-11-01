@@ -30,4 +30,26 @@ class AutoEntryNotificationTest {
         val done=context.getSystemService(NotificationManager::class.java).activeNotifications.single {it.tag==c.id}.notification
         assertTrue(done.actions.isNullOrEmpty())
     }
+
+    @Test fun suggestionDetailsUpdateWithoutLeakingIntoPublicNotification() {
+        val context=ApplicationProvider.getApplicationContext<Context>()
+        val c=PaymentCandidate("details","demo.db","demo","模拟账本","招商银行短信","2026-10-26",850,"expense","模拟商户","备注",false,"pending","首次确认",channel="支付宝",suggestedTitle="早餐",transactionAt=1792971000000)
+        val manager=context.getSystemService(NotificationManager::class.java)
+        AutoCapture.notify(context,c,"餐饮")
+        val n=manager.activeNotifications.single {it.tag==c.id}.notification
+        assertEquals("早餐 · ¥8.50",n.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertTrue(n.extras.getCharSequence(Notification.EXTRA_TEXT).toString().contains("支付宝 · 餐饮 · 支出"))
+        assertFalse(n.publicVersion.extras.toString().contains("早餐"))
+        assertFalse(n.publicVersion.extras.toString().contains("8.50"))
+        AutoCapture.notify(context,c.copy(suggestedTitle="午餐"),"餐饮")
+        assertEquals("午餐 · ¥8.50",manager.activeNotifications.single {it.tag==c.id}.notification.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+    }
+    @Test fun incompleteAmountsAreNotPresentedAsZero() {
+        val context=ApplicationProvider.getApplicationContext<Context>()
+        val c=PaymentCandidate("missing","demo.db","demo","模拟账本","微信","2026-10-26",null,null,"","",false,"pending","请核对")
+        AutoCapture.notify(context,c)
+        val n=context.getSystemService(NotificationManager::class.java).activeNotifications.single {it.tag==c.id}.notification
+        assertEquals("待确认账目 · 金额待核对",n.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertTrue(n.extras.getCharSequence(Notification.EXTRA_TEXT).toString().contains("分类待确认 · 收支待核对 · 时间待核对"))
+    }
 }

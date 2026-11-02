@@ -1,5 +1,7 @@
 """Assemble a data-free portable trial with notices and rebuildable companion sources."""
 import hashlib
+from datetime import datetime
+import json
 import re
 from importlib.metadata import distributions
 from pathlib import Path
@@ -14,8 +16,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def main():
     version=re.search(r'versionName = "([^"]+)"',(ROOT/'android/app/build.gradle.kts').read_text(encoding='utf-8')).group(1).split('-')[0]
-    output = ROOT / '交付包'
-    output.mkdir(exist_ok=True)
+    output = ROOT / '交付包' / (f'个人记账-{version}-联调试用-' + datetime.now().strftime('%Y%m%d-%H%M%S'))
+    output.mkdir(parents=True, exist_ok=False)
     bundle = ROOT / 'desktop/dist/LedgerBackup'
     required = [bundle/'LedgerBackup.exe', ROOT/'android/app/build/outputs/apk/debug/app-debug.apk',
                 ROOT/'.tools/distribution-sources/cloudflared-LICENSE',
@@ -78,16 +80,24 @@ def main():
     apk=output/f'个人记账-{version}-试用.apk'
     shutil.copy2(required[1],apk)
     shutil.copy2(ROOT/'docs/电脑端外网备份使用说明.md',output/'使用说明.md')
+    shutil.copy2(ROOT/'docs/联调试用包说明.md', output/'先读我.md')
+    shutil.copy2(ROOT/'docs/备份历史与独立恢复.md', output/'备份历史与独立恢复.md')
     (output/'验收状态.txt').write_text(
-        '0.7.0预算版：36项JVM、25项真机回归、36项服务端、6项电脑测试通过；详见开发进度。\n'
-        '包含当前账本搜索筛选、连续月份预算、逐月分类分配、80%/100%应用内和系统通知、到期续期选择。\n'
-        '预算使用备份格式3，手机电脑需一同升级；退出旧电脑程序后打开0.7.0并重新扫码。\n'
-        '原有账目保护及逐行比对已完成。测试使用独立合成账号，不向真实邮箱发送邮件。\n'
-        '预算账号上传恢复在USB连接的实际手机上通过两个独立账本上下文验证，不能等同两台物理手机外网验收。\n'
-        '后台预算检查受系统节电调度影响；通知关闭时保留应用内提示。\n'
-        '免费外网通道完整换机专项、其他用户init.tcl故障环境和更多安卓机型仍未全面验收。\n'
-        '试用包不代表正式发布验收完成。\n',encoding='utf-8')
-    (output/'SHA256SUMS.txt').write_text('\n'.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name for p in (archive,apk))+'\n',encoding='utf-8')
+        '本次为本地联调试用包，不是新的公开正式版本。\n'
+        '电脑实际EXE：v2/v5历史、非法规则拒绝、重启登录及改密测试通过；41项服务端回归通过。\n'
+        '手机到实际EXE：两版v5上传、历史独立恢复、规则/确认状态及账号隔离专项1项通过。\n'
+        '最近手机业务验证为96项JVM、3项通知真机专项通过；未在本次打包时重跑完整套件。\n'
+        '联调使用USB本机转发和隔离模拟账号，不代表公网、扫码UI、真实SMTP或多机型重新验收。\n'
+        '电脑内部版本标识仍为0.7.0，本包构建支持备份格式1至5，不要与旧公开包混用。\n', encoding='utf-8')
+    revision = subprocess.check_output(['git','-c','safe.directory='+ROOT.as_posix(),'rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+    manifest = {'source_revision': revision, 'phone_version': version,
+                'desktop_internal_version': '0.7.0', 'backup_formats': [1,2,3,4,5],
+                'desktop_exe_sha256': hashlib.sha256(required[0].read_bytes()).hexdigest(),
+                'distribution': 'local-integration-trial', 'built_at': datetime.now().isoformat()}
+    (output/'构建信息.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
+    files = sorted(p for p in output.iterdir() if p.is_file())
+    (output/'SHA256SUMS.txt').write_text('\n'.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name for p in files)+'\n',encoding='utf-8')
+    print('Output: '+str(output))
     print('Trial ZIP and APK prepared; archive integrity and private-data checks passed.')
 
 

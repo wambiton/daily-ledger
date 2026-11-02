@@ -3,6 +3,7 @@
 The isolated database is retained in reports/private for inspection. No phone,
 external tunnel, SMTP message, or existing account directory is used.
 """
+import argparse
 import copy
 import json
 from pathlib import Path
@@ -19,6 +20,12 @@ from test_external_device import ROOT, seed, identity
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--packaged', action='store_true', help='Run the built Windows executable instead of Python sources')
+    args = parser.parse_args()
+    executable = ROOT / 'desktop/dist/LedgerBackup/LedgerBackup.exe'
+    if args.packaged and not executable.is_file():
+        raise RuntimeError('Build the desktop executable first')
     private = ROOT / 'reports' / 'private'
     private.mkdir(parents=True, exist_ok=True)
     folder = Path(tempfile.mkdtemp(dir=private, prefix='history-process-'))
@@ -45,7 +52,8 @@ def main():
             return error.code, json.load(error)
 
     def start():
-        process = subprocess.Popen([sys.executable, str(ROOT / 'desktop/app.py'), '--serve',
+        command = [str(executable)] if args.packaged else [sys.executable, str(ROOT / 'desktop/app.py')]
+        process = subprocess.Popen(command + ['--serve',
             '--data-dir', str(folder), '--port', str(port)], cwd=ROOT,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW)
@@ -75,9 +83,16 @@ def main():
         'entries': [dict(id=str(uuid.uuid4()), type='expense', category_id=category, amount_fen=1234,
                          date='2025-01-02', note='synthetic history', created_at=1, updated_at=2, deleted_at=None)]}
     newer = copy.deepcopy(original)
-    newer['entries'][0]['amount_fen'] = 2468
+    newer['entries'][0].update(amount_fen=2468, title='模拟早餐')
+    newer.update(format_version=5, budgets=[], naming_rules=[dict(
+        id=str(uuid.uuid4()), title='模拟早餐', category_id=category, channel='支付宝',
+        merchant='', start_minute=390, end_minute=540, weekdays=[1,2,3,4,5,6,7],
+        priority=0, enabled=True, allow_automatic=True,
+        trusted=[dict(channel='支付宝', merchant='模拟食堂')])])
     process = start()
     try:
+        status, health = call('health/')
+        assert status == 200 and set(range(1,6)).issubset(health['backup_formats'])
         status, account = call('auth/login/', {'email': email, 'password': '12345678'})
         assert status == 200
         token = account['access_token']
@@ -87,6 +102,11 @@ def main():
             status, result = call('backup/', dict(operation_id=str(uuid.uuid4()), base_revision=base, payload=payload), token)
             assert status == 200 and result['revision'] == base + 1
         before = persisted()
+        invalid = copy.deepcopy(newer)
+        invalid['naming_rules'][0]['trusted'][0]['channel'] = '微信'
+        status, result = call('backup/', dict(operation_id=str(uuid.uuid4()), base_revision=2, payload=invalid), token)
+        assert status == 400
+        assert before == persisted(), 'Rejected trust changed existing snapshots or head'
     finally:
         process.terminate(); process.wait(timeout=10)
     process = start()
@@ -104,7 +124,7 @@ def main():
         assert before == persisted(), 'Reading history changed saved snapshots or head'
     finally:
         process.terminate(); process.wait(timeout=10)
-    print('HISTORY_PROCESS_RESTART_PAGINATION_AND_NONMUTATING_READ_OK')
+    print(('PACKAGED' if args.packaged else 'SOURCE') + '_V2_V5_RULES_RESTART_HISTORY_AND_REJECTION_OK')
     print('Synthetic database retained:', folder.relative_to(ROOT))
 
 

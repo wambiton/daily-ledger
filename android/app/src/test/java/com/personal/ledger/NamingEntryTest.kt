@@ -126,4 +126,45 @@ class NamingEntryTest {
         assertEquals("merged",inbox.auto().candidate(child.id)!!.status)
         assertEquals(1,store.snapshot().single().trusted.size)
     }
+
+    /** Model interruption after the ledger commit but before the inbox commit. */
+    private suspend fun interruptedWrite(c: PaymentCandidate): Entry {
+        val entry=Entry(c.id,c.owner,"expense",rule.categoryId,850,c.date,c.note,1,2,title="已保存名称")
+        db.ledger().upsertEntry(entry)
+        db.ledger().markImported(ImportedSource(c.owner,c.id))
+        assertEquals("pending",inbox.auto().candidate(c.id)!!.status)
+        return entry
+    }
+    @Test fun interruptedWriteRepeatedConfirmReconcilesBothSourcesWithoutDuplicate() = runBlocking {
+        val root=receive(notice())
+        val child=receive(notice("sms",true))
+        val saved=interruptedWrite(root)
+        val restarted=AutoEntryProcessor(inbox)
+        repeat(3) {restarted.notificationAction(child.id,"confirm",db,"naming.db")}
+        assertEquals(listOf(saved),db.ledger().entrySnapshot("a"))
+        assertEquals("booked",inbox.auto().candidate(root.id)!!.status)
+        assertEquals("merged",inbox.auto().candidate(child.id)!!.status)
+        assertEquals(saved.id,inbox.auto().candidate(child.id)!!.entryId)
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+    }
+    @Test fun interruptedWriteCannotBeRenamedOrIgnoredByStaleActions() = runBlocking {
+        val root=receive(notice())
+        val saved=interruptedWrite(root)
+        val restarted=AutoEntryProcessor(inbox)
+        restarted.notificationAction(root.id,"rename",db,"naming.db","不可覆盖")
+        restarted.notificationAction(root.id,"ignore",db,"naming.db")
+        assertEquals(listOf(saved),db.ledger().entrySnapshot("a"))
+        assertEquals("booked",inbox.auto().candidate(root.id)!!.status)
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+    }
+    @Test fun interruptedWriteAlreadyInTrashIsNotResurrectedByConfirm() = runBlocking {
+        val root=receive(notice())
+        val saved=interruptedWrite(root).copy(deletedAt=3,updatedAt=3)
+        db.ledger().upsertEntry(saved)
+        AutoEntryProcessor(inbox).notificationAction(root.id,"confirm",db,"naming.db")
+        assertEquals(saved,db.ledger().entry(root.id))
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+        assertEquals("booked",inbox.auto().candidate(root.id)!!.status)
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+    }
 }

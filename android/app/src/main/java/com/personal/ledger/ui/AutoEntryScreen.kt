@@ -36,6 +36,7 @@ import java.time.format.DateTimeFormatter
     var choose by remember {mutableStateOf(false)}
     var settingsExpanded by rememberSaveable {mutableStateOf(false)}
     var diagnosticsExpanded by rememberSaveable {mutableStateOf(false)}
+    var restoreId by remember {mutableStateOf<String?>(null)}
     var history by rememberSaveable {mutableStateOf(false)}
     val rows by vm.rows.collectAsStateWithLifecycle()
     val error by vm.error.collectAsStateWithLifecycle()
@@ -165,10 +166,16 @@ import java.time.format.DateTimeFormatter
                 Text("目标：${c.bookLabel}")
                 Text(c.reason)
                 if(c.merchant.isNotEmpty()) Text(c.merchant)
+                if(c.status=="ignored" && c.mergedInto==null && c.reason=="用户选择不入账")
+                    OutlinedButton(onClick={restoreId=c.id},enabled=!busy,modifier=Modifier.testTag("auto-restore-${c.id}")) {Text("恢复到待确认")}
                 if(c.status!="ignored") OutlinedButton(onClick={vm.open(c)},enabled=!busy,modifier=Modifier.testTag("auto-review-${c.id}")) {Text(if(c.status=="booked" || c.status=="merged") "查看账目与来源" else "确认这笔账目")}
             }}
         }
     }
+    if(restoreId!=null) AlertDialog(onDismissRequest={restoreId=null},title={Text("恢复这条已忽略记录？")},
+        text={Text("这条记录及已关联来源会回到待确认，不会立即记账。请到待确认列表核对金额、分类和疑似重复，再手动确认。")},
+        confirmButton={TextButton(onClick={val id=restoreId!!;restoreId=null;vm.restoreIgnored(id);history=false},enabled=!busy){Text("恢复到待确认")}},
+        dismissButton={TextButton(onClick={restoreId=null}){Text("取消")}})
     if(choose) {
         val current=JSONObject().put("database",ledger.databaseName).put("owner",ledger.owner).put("label",if(ledger.owner=="local-preview") "原本机账本" else "当前查看的账号账本")
         val books=(runCatching {PhoneLedgers(context,"account").books()}.getOrDefault(emptyList())+current+

@@ -34,7 +34,7 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
                         if(root.status=="booked" && (existing==null || existing.deletedAt!=null || existing.owner!=root.owner || existing.amountFen!=root.amountFen || existing.type!=root.type || existing.date!=root.date)) return@withTransaction
                         val naming=naming(root,ledger)
                         // A second source must not silently confirm a first-time naming rule.
-                        if(existing==null && naming is NamingDecision.Review) {
+                        if(existing==null && (root.uncertain || naming is NamingDecision.Review)) {
                             merged=candidate.copy(status="linked",mergedInto=root.id,reason="已关联同笔来源，等待原记录确认；尚未计入统计")
                             inbox.auto().update(merged!!)
                             return@withTransaction
@@ -163,6 +163,23 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
             inbox.auto().children(id).filter {it.status=="linked"}.forEach {
                 inbox.auto().update(it.copy(status="ignored",reason="原记录已选择不入账"))
             }
+        }
+    }
+    /** Restore only an explicitly ignored root; never write a ledger entry or grant trust. */
+    suspend fun restoreIgnored(id: String, ledger: LedgerDatabase, databaseName: String): PaymentCandidate = lock.withLock {
+        inbox.withTransaction {
+            val root=requireNotNull(inbox.auto().candidate(id))
+            require(root.databaseName==databaseName) {"原账本不一致"}
+            require(root.status=="ignored" && root.mergedInto==null && root.reason=="用户选择不入账") {"仅支持恢复手动忽略的原记录，请刷新列表"}
+            val children=inbox.auto().children(id)
+            val sources=listOf(root)+children
+            require(children.all {it.status=="ignored" && it.databaseName==root.databaseName && it.owner==root.owner}) {"关联来源已变更，请先核对"}
+            val imported=ledger.ledger().importedSources(root.owner)
+            require(sources.all {it.entryId==null && ledger.ledger().entry(it.id)==null && it.id !in imported}) {"存在已处理账目，请先核对原账本"}
+            val restored=root.copy(status="pending",reason="已恢复，请在应用内核对后确认；尚未入账",uncertain=true,ruleSignature="")
+            inbox.auto().update(restored)
+            children.forEach {inbox.auto().update(it.copy(status="linked",reason="原记录已恢复，等待人工确认；尚未入账"))}
+            restored
         }
     }
     /** Notification commands use saved evidence, never the currently displayed ledger. */

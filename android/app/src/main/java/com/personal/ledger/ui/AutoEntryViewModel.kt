@@ -45,6 +45,11 @@ class AutoEntryViewModel(app: Application): AndroidViewModel(app) {
         }
         review.value=null
     }
+    fun restoreIgnored(id: String) = action {
+        val c=requireNotNull(inbox.auto().candidate(id))
+        withLedger(c) {db -> AutoEntryProcessor(inbox).restoreIgnored(id,db,c.databaseName)}
+        review.value=null
+    }
     fun ignore(id: String) = action {AutoEntryProcessor(inbox).ignore(id);review.value=null}
     private suspend fun withLedger(c: PaymentCandidate,block: suspend (LedgerDatabase)->Unit) {
         require(AutoCapture.validName(c.databaseName) && getApplication<Application>().getDatabasePath(c.databaseName).exists()) {"此记录原指定账本暂不可用"}

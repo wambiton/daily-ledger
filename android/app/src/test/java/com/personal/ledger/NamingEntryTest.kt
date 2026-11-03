@@ -167,4 +167,45 @@ class NamingEntryTest {
         assertEquals("booked",inbox.auto().candidate(root.id)!!.status)
         assertTrue(store.snapshot().single().trusted.isEmpty())
     }
+
+    @Test fun ignoredSourcesRestoreWithoutBookingOrTrustAndRequireManualConfirmation() = runBlocking {
+        val root=receive(notice());val child=receive(notice("sms",true))
+        processor.ignore(root.id)
+        val restored=processor.restoreIgnored(root.id,db,"naming.db")
+        assertEquals("pending",restored.status)
+        assertEquals("linked",inbox.auto().candidate(child.id)!!.status)
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+        processor.notificationAction(root.id,"confirm",db,"naming.db")
+        assertEquals("pending",inbox.auto().candidate(root.id)!!.status)
+        assertNull(receiveReplay(notice()))
+        confirm(restored)
+        assertEquals(1,db.ledger().entrySnapshot("a").size)
+        assertEquals("merged",inbox.auto().candidate(child.id)!!.status)
+        assertTrue(store.snapshot().single().trusted.isEmpty())
+    }
+    private suspend fun receiveReplay(n: PaymentNotice)=processor.receive(n,PaymentCandidate(n.id,"naming.db","a","模拟",n.platform,n.date,n.amountFen,n.type,n.merchant,n.note,n.refund,"pending",""),db)
+    @Test fun restoredIgnoredEntryCannotBeAutomaticallyConfirmedByLateSmsWithoutRules() = runBlocking {
+        val root=receive(notice());processor.ignore(root.id)
+        processor.restoreIgnored(root.id,db,"naming.db")
+        store.save(rule.copy(enabled=false))
+        val child=receive(notice("late-sms",true))
+        assertEquals("linked",child.status)
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+    }
+    @Test fun ignoredRestoreRejectsWrongBookSystemExclusionsAndExistingEntries() = runBlocking {
+        val root=receive(notice());processor.ignore(root.id)
+        assertTrue(runCatching {processor.restoreIgnored(root.id,db,"other.db")}.isFailure)
+        assertEquals("ignored",inbox.auto().candidate(root.id)!!.status)
+        interruptedWriteForIgnored(root)
+        assertTrue(runCatching {processor.restoreIgnored(root.id,db,"naming.db")}.isFailure)
+        assertEquals("ignored",inbox.auto().candidate(root.id)!!.status)
+        val excluded=receive(notice("excluded").copy(excluded=true))
+        assertTrue(runCatching {processor.restoreIgnored(excluded.id,db,"naming.db")}.isFailure)
+        assertEquals("ignored",inbox.auto().candidate(excluded.id)!!.status)
+        assertEquals(1,db.ledger().entrySnapshot("a").size)
+    }
+    private suspend fun interruptedWriteForIgnored(c: PaymentCandidate) {
+        db.ledger().upsertEntry(Entry(c.id,c.owner,"expense",rule.categoryId,850,c.date,c.note,1,2,title="已有账目"))
+    }
 }

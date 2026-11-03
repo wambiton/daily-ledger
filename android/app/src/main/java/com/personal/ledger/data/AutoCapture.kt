@@ -38,6 +38,7 @@ object AutoCapture {
     }
     fun notify(context: Context,c: PaymentCandidate,categoryName: String="") {
         val manager=context.getSystemService(NotificationManager::class.java)
+        if(c.status in setOf("ignored","revoked")) {manager.cancel(c.id,8100);return}
         manager.createNotificationChannel(NotificationChannel("ledger-auto","自动记账结果",NotificationManager.IMPORTANCE_DEFAULT))
         if(!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val intent=Intent(context,MainActivity::class.java).setAction("com.personal.ledger.AUTO_ENTRY").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -64,7 +65,10 @@ object AutoCapture {
                 addAction(AutoEntryActions.button(context,c.id,"confirm","确认"))
                 addAction(AutoEntryActions.button(context,c.id,"rename","修改名称"))
                 addAction(AutoEntryActions.button(context,c.id,"ignore","忽略本次"))
-            } }.build()) } catch(_: SecurityException) {}
+            }
+                if(c.status in setOf("booked","merged") && !c.entryId.isNullOrBlank())
+                    addAction(AutoEntryActions.button(context,c.id,"revoke","撤销入账"))
+            }.build()) } catch(_: SecurityException) {}
     }
 }
 

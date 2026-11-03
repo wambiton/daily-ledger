@@ -52,4 +52,23 @@ class AutoEntryNotificationTest {
         assertEquals("待确认账目 · 金额待核对",n.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
         assertTrue(n.extras.getCharSequence(Notification.EXTRA_TEXT).toString().contains("分类待确认 · 收支待核对 · 时间待核对"))
     }
+
+    @Test fun savedNotificationsRouteRevokeAndHideActionsOnPublicVersion() {
+        val context=ApplicationProvider.getApplicationContext<Context>()
+        val manager=context.getSystemService(NotificationManager::class.java)
+        val c=PaymentCandidate("saved","demo.db","a","模拟账本","支付宝","2026-10-26",850,"expense","商户","",false,"booked","",entryId="entry")
+        for(status in listOf("booked","merged")) {
+            AutoCapture.notify(context,c.copy(status=status))
+            val n=manager.activeNotifications.single {it.tag==c.id}.notification
+            assertEquals(1,n.actions.size)
+            assertEquals("撤销入账",n.actions.single().title.toString())
+            assertEquals(AutoEntryActions.button(context,c.id,"revoke","撤销入账").actionIntent,n.actions.single().actionIntent)
+            assertNotEquals(AutoEntryActions.button(context,"other","revoke","撤销入账").actionIntent,n.actions.single().actionIntent)
+            assertTrue(n.actions.single().remoteInputs.isNullOrEmpty())
+            assertEquals(Notification.VISIBILITY_PRIVATE,n.visibility)
+            assertTrue(n.publicVersion.actions.isNullOrEmpty())
+        }
+        AutoCapture.notify(context,c.copy(status="revoked"))
+        assertTrue(manager.activeNotifications.none {it.tag==c.id})
+    }
 }

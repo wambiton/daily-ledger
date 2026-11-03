@@ -214,7 +214,9 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
     }
     /** Notification commands use saved evidence, never the currently displayed ledger. */
     suspend fun notificationAction(id: String, action: String, ledger: LedgerDatabase,
-        databaseName: String, title: String?=null): PaymentCandidate? = lock.withLock {
+        databaseName: String, title: String?=null): PaymentCandidate? {
+        if(action=="revoke") return revoke(id,ledger,databaseName).firstOrNull {it.id==id}
+        return lock.withLock {
         require(action in setOf("confirm","rename","ignore"))
         val selected=inbox.auto().candidate(id) ?: return@withLock null
         val fresh=if(selected.status=="linked") {
@@ -271,6 +273,7 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
         }
         confirmLocked(fresh,ledger,category.id,fresh.type,
             java.math.BigDecimal.valueOf(fresh.amountFen,2).toPlainString(),fresh.date,fresh.note,false,null,fresh.suggestedTitle)
+    }
     }
     /** Deterministic entry ID and imported source survive a crash between the two databases. */
     private suspend fun write(c: PaymentCandidate,db: LedgerDatabase,category: String,type: String,amount: Long,date: String,note: String,replace: String?,title: String=""): Entry = db.withTransaction {

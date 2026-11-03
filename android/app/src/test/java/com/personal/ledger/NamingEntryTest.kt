@@ -258,4 +258,19 @@ class NamingEntryTest {
         assertEquals(saved,db.ledger().entry(root.id))
         assertEquals("booked",inbox.auto().candidate(root.id)!!.status)
     }
+
+    @Test fun notificationRevokeUsesOriginalSourceAndStaleConfirmCannotRebook() = runBlocking {
+        val root=receive(notice());val child=receive(notice("sms",true));confirm(root)
+        assertTrue(runCatching {processor.notificationAction(root.id,"revoke",db,"wrong.db")}.isFailure)
+        assertNull(db.ledger().entry(root.id)!!.deletedAt)
+        assertEquals("revoked",processor.notificationAction(child.id,"revoke",db,"naming.db")!!.status)
+        val removed=db.ledger().entry(root.id)!!
+        processor.notificationAction(root.id,"revoke",db,"naming.db")
+        processor.notificationAction(root.id,"confirm",db,"naming.db")
+        processor.notificationAction(child.id,"rename",db,"naming.db","旧通知改名")
+        assertEquals(removed,db.ledger().entry(root.id))
+        assertNotNull(removed.deletedAt)
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+        assertEquals("revoked",inbox.auto().candidate(root.id)!!.status)
+    }
 }

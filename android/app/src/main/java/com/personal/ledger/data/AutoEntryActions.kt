@@ -31,7 +31,7 @@ object AutoEntryActions {
 class AutoEntryActionReceiver: BroadcastReceiver() {
     override fun onReceive(context: Context,intent: Intent) {
         val action=intent.action ?: return
-        if(action !in setOf("confirm","rename","ignore")) return
+        if(action !in setOf("confirm","rename","ignore","revoke")) return
         val id=intent.getStringExtra("candidate_id")?.takeIf {it.isNotBlank()} ?: return
         val title=if(action=="rename") RemoteInput.getResultsFromIntent(intent)?.getCharSequence(AutoEntryActions.NAME)?.toString() ?: return else ""
         // Bound input before WorkManager serialization; the processor validates the 40-character limit.
@@ -54,9 +54,11 @@ class AutoEntryActionWorker(context: Context,params: WorkerParameters): Coroutin
             val manager=applicationContext.getSystemService(android.app.NotificationManager::class.java)
             manager.cancel(id,8100)
             if(result!=null) {
+                if(result.status=="revoked" && result.entryId!=null)
+                    inbox.auto().entrySources(result.databaseName,result.owner,result.entryId).forEach {manager.cancel(it.id,8100)}
                 inbox.auto().children(result.id).forEach {manager.cancel(it.id,8100)}
                 if(result.status in setOf("ignored","revoked")) manager.cancel(result.id,8100) else AutoCapture.notifyFromLedger(applicationContext,result,ledger)
-                if(result.status=="booked") BudgetNotifications.send(applicationContext,c.databaseName,BudgetRepository(ledger,c.owner).reconcile())
+                if(result.status in setOf("booked","revoked")) BudgetNotifications.send(applicationContext,c.databaseName,BudgetRepository(ledger,c.owner).reconcile())
             }
             Result.success()
         } catch(e: CancellationException) {throw e}

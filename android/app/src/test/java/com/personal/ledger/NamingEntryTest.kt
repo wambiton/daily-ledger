@@ -208,4 +208,54 @@ class NamingEntryTest {
     private suspend fun interruptedWriteForIgnored(c: PaymentCandidate) {
         db.ledger().upsertEntry(Entry(c.id,c.owner,"expense",rule.categoryId,850,c.date,c.note,1,2,title="已有账目"))
     }
+
+    @Test fun revokeMergedSourcesPreservesEvidenceAndMovesOneEntryToTrash() = runBlocking {
+        val root=receive(notice());val child=receive(notice("sms",true));confirm(root)
+        val before=db.ledger().entry(root.id)!!
+        processor.revoke(child.id,db,"naming.db")
+        val removed=db.ledger().entry(root.id)!!
+        assertNotNull(removed.deletedAt)
+        assertEquals(before.copy(deletedAt=removed.deletedAt,updatedAt=removed.updatedAt),removed)
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+        assertEquals("revoked",inbox.auto().candidate(root.id)!!.status)
+        assertEquals("revoked",inbox.auto().candidate(child.id)!!.status)
+        assertTrue(root.id in db.ledger().importedSources("a"))
+        assertEquals(1,store.snapshot().single().trusted.size)
+        processor.revoke(root.id,db,"naming.db")
+        processor.notificationAction(root.id,"confirm",db,"naming.db")
+        assertEquals(removed,db.ledger().entry(root.id))
+    }
+    @Test fun revokedEntryLateSourcesWaitAndDifferentAmountCanStillBook() = runBlocking {
+        val root=receive(notice());confirm(root);processor.revoke(root.id,db,"naming.db")
+        val late=receive(notice("late",true))
+        assertEquals("pending",late.status);assertTrue(late.uncertain)
+        assertTrue(db.ledger().entrySnapshot("a").isEmpty())
+        assertNull(receiveReplay(notice()))
+        val different=receive(notice("different").copy(amountFen=950))
+        assertEquals("booked",different.status)
+        assertEquals(950L,db.ledger().entrySnapshot("a").single().amountFen)
+    }
+    @Test fun revokeRetryAfterLedgerCommitAndAfterTrashRestoreIsSafe() = runBlocking {
+        val root=receive(notice());confirm(root)
+        // Simulate interruption before the candidate status commit.
+        LedgerRepository(db,"a").delete(root.id)
+        val removed=db.ledger().entry(root.id)!!
+        val late=receive(notice("late",true))
+        assertEquals("pending",late.status)
+        processor.revoke(root.id,db,"naming.db")
+        assertEquals(removed,db.ledger().entry(root.id))
+        val restored=removed.copy(deletedAt=null)
+        db.ledger().upsertEntry(restored)
+        processor.revoke(root.id,db,"naming.db")
+        assertEquals(restored,db.ledger().entry(root.id))
+    }
+    @Test fun revokeRejectsWrongBookAndPendingCandidate() = runBlocking {
+        val root=receive(notice())
+        assertTrue(runCatching {processor.revoke(root.id,db,"naming.db")}.isFailure)
+        confirm(root)
+        val saved=db.ledger().entry(root.id)
+        assertTrue(runCatching {processor.revoke(root.id,db,"other.db")}.isFailure)
+        assertEquals(saved,db.ledger().entry(root.id))
+        assertEquals("booked",inbox.auto().candidate(root.id)!!.status)
+    }
 }

@@ -16,6 +16,18 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
                 status=if(notice.excluded) "ignored" else "pending",reason=if(notice.excluded) "充值、提现或本人账户互转不计收支" else "请确认分类与通知内容")
             inbox.auto().insert(candidate)
             if(notice.excluded) return@withTransaction candidate
+            // A late source must not silently recreate an entry the user has removed.
+            if(candidate.transactionAt>0 && candidate.amountFen!=null) {
+                val removed=inbox.auto().processedNearby(candidate.databaseName,candidate.owner,candidate.transactionAt-300000,candidate.transactionAt+300000)
+                    .filter {it.amountFen==candidate.amountFen && it.type==candidate.type && it.refund==candidate.refund &&
+                        it.channel.ifBlank {it.platform}==candidate.channel.ifBlank {candidate.platform}}
+                    .any {old -> old.status=="revoked" || old.entryId?.let {ledger.ledger().entry(it)?.deletedAt}!=null}
+                if(removed) {
+                    candidate=candidate.copy(uncertain=true,reason="附近存在已撤销或已删除的同金额记录，请核对是否同笔消费；不会自动重新入账")
+                    inbox.auto().update(candidate)
+                    return@withTransaction candidate
+                }
+            }
             if(!notice.uncertain) {
                 val possible=inbox.auto().nearby(candidate.databaseName,candidate.owner,candidate.transactionAt-300000,candidate.transactionAt+300000)
                     .filter { crossSourceMatch(candidate,it) }
@@ -162,6 +174,24 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
             inbox.auto().update(candidate.copy(status="ignored",reason="用户选择不入账"))
             inbox.auto().children(id).filter {it.status=="linked"}.forEach {
                 inbox.auto().update(it.copy(status="ignored",reason="原记录已选择不入账"))
+            }
+        }
+    }
+    /** Soft-delete only the entry referenced by these sources; preserve evidence and import markers. */
+    suspend fun revoke(id: String, ledger: LedgerDatabase, databaseName: String): List<PaymentCandidate> = lock.withLock {
+        val selected=requireNotNull(inbox.auto().candidate(id))
+        require(selected.databaseName==databaseName) {"原账本不一致"}
+        val entryId=requireNotNull(selected.entryId) {"此记录尚未入账"}
+        val sources=inbox.auto().entrySources(databaseName,selected.owner,entryId)
+        if(selected.status=="revoked") return@withLock sources
+        require(selected.status in setOf("booked","merged")) {"此记录不能撤销，请刷新"}
+        val entry=requireNotNull(ledger.ledger().entry(entryId)) {"原账目已不存在，请核对"}
+        require(entry.owner==selected.owner) {"原账本不一致"}
+        require(sources.all {it.status in setOf("booked","merged","revoked")}) {"来源状态已变更，请核对"}
+        LedgerRepository(ledger,selected.owner).delete(entryId)
+        inbox.withTransaction {
+            sources.map {it.copy(status="revoked",reason="已撤销入账，账目移入回收站；来源保留，可在回收站恢复")}.also {rows ->
+                rows.forEach {inbox.auto().update(it)}
             }
         }
     }

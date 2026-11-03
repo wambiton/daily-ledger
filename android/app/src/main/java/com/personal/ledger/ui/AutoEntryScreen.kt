@@ -36,6 +36,7 @@ import java.time.format.DateTimeFormatter
     var choose by remember {mutableStateOf(false)}
     var settingsExpanded by rememberSaveable {mutableStateOf(false)}
     var diagnosticsExpanded by rememberSaveable {mutableStateOf(false)}
+    var revokeId by remember {mutableStateOf<String?>(null)}
     var restoreId by remember {mutableStateOf<String?>(null)}
     var history by rememberSaveable {mutableStateOf(false)}
     val rows by vm.rows.collectAsStateWithLifecycle()
@@ -168,10 +169,15 @@ import java.time.format.DateTimeFormatter
                 if(c.merchant.isNotEmpty()) Text(c.merchant)
                 if(c.status=="ignored" && c.mergedInto==null && c.reason=="用户选择不入账")
                     OutlinedButton(onClick={restoreId=c.id},enabled=!busy,modifier=Modifier.testTag("auto-restore-${c.id}")) {Text("恢复到待确认")}
-                if(c.status!="ignored") OutlinedButton(onClick={vm.open(c)},enabled=!busy,modifier=Modifier.testTag("auto-review-${c.id}")) {Text(if(c.status=="booked" || c.status=="merged") "查看账目与来源" else "确认这笔账目")}
+                if(c.status in setOf("booked","merged")) OutlinedButton(onClick={revokeId=c.id},enabled=!busy,modifier=Modifier.testTag("auto-revoke-${c.id}")) {Text("撤销入账")}
+                if(c.status !in setOf("ignored","revoked")) OutlinedButton(onClick={vm.open(c)},enabled=!busy,modifier=Modifier.testTag("auto-review-${c.id}")) {Text(if(c.status=="booked" || c.status=="merged") "查看账目与来源" else "确认这笔账目")}
             }}
         }
     }
+    if(revokeId!=null) AlertDialog(onDismissRequest={revokeId=null},title={Text("撤销这笔入账？")},
+        text={Text("对应账目会移入回收站，不再计入收支和预算；同笔关联来源一并标记撤销，不会撤销其他交易。可在回收站保留期内恢复，命名规则不会因此停用。")},
+        confirmButton={TextButton(onClick={val id=revokeId!!;revokeId=null;vm.revoke(id)},enabled=!busy){Text("撤销并移入回收站")}},
+        dismissButton={TextButton(onClick={revokeId=null}){Text("取消")}})
     if(restoreId!=null) AlertDialog(onDismissRequest={restoreId=null},title={Text("恢复这条已忽略记录？")},
         text={Text("这条记录及已关联来源会回到待确认，不会立即记账。请到待确认列表核对金额、分类和疑似重复，再手动确认。")},
         confirmButton={TextButton(onClick={val id=restoreId!!;restoreId=null;vm.restoreIgnored(id);history=false},enabled=!busy){Text("恢复到待确认")}},

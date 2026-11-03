@@ -55,7 +55,7 @@ class AutoEntryActionWorker(context: Context,params: WorkerParameters): Coroutin
             manager.cancel(id,8100)
             if(result!=null) {
                 inbox.auto().children(result.id).forEach {manager.cancel(it.id,8100)}
-                if(result.status=="ignored") manager.cancel(result.id,8100) else AutoCapture.notifyFromLedger(applicationContext,result,ledger)
+                if(result.status in setOf("ignored","revoked")) manager.cancel(result.id,8100) else AutoCapture.notifyFromLedger(applicationContext,result,ledger)
                 if(result.status=="booked") BudgetNotifications.send(applicationContext,c.databaseName,BudgetRepository(ledger,c.owner).reconcile())
             }
             Result.success()

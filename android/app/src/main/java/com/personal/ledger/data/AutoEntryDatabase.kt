@@ -30,6 +30,10 @@ data class MerchantCategory(val databaseName: String,val owner: String,val platf
     @Query("SELECT * FROM payment_candidates WHERE id=:id") suspend fun candidate(id: String): PaymentCandidate?
     @Query("SELECT * FROM payment_candidates WHERE databaseName=:db AND owner=:owner AND transactionAt BETWEEN :start AND :end AND status IN ('pending','booked') AND mergedInto IS NULL AND mergeDisabled=0")
     suspend fun nearby(db: String,owner: String,start: Long,end: Long): List<PaymentCandidate>
+    @Query("SELECT * FROM payment_candidates WHERE databaseName=:db AND owner=:owner AND entryId=:entry")
+    suspend fun entrySources(db: String,owner: String,entry: String): List<PaymentCandidate>
+    @Query("SELECT * FROM payment_candidates WHERE databaseName=:db AND owner=:owner AND transactionAt BETWEEN :start AND :end AND status IN ('booked','merged','revoked')")
+    suspend fun processedNearby(db: String,owner: String,start: Long,end: Long): List<PaymentCandidate>
     @Query("SELECT * FROM payment_candidates WHERE mergedInto=:id") suspend fun children(id: String): List<PaymentCandidate>
     @Insert(onConflict=OnConflictStrategy.IGNORE) suspend fun insert(candidate: PaymentCandidate): Long
     @Upsert suspend fun update(candidate: PaymentCandidate)

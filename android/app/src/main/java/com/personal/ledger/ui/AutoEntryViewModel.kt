@@ -45,6 +45,16 @@ class AutoEntryViewModel(app: Application): AndroidViewModel(app) {
         }
         review.value=null
     }
+    fun revoke(id: String) = action {
+        val c=requireNotNull(inbox.auto().candidate(id))
+        withLedger(c) {db ->
+            val sources=AutoEntryProcessor(inbox).revoke(id,db,c.databaseName)
+            val manager=getApplication<Application>().getSystemService(android.app.NotificationManager::class.java)
+            sources.forEach {manager.cancel(it.id,8100)}
+            BudgetNotifications.send(getApplication(),c.databaseName,BudgetRepository(db,c.owner).reconcile())
+        }
+        review.value=null
+    }
     fun restoreIgnored(id: String) = action {
         val c=requireNotNull(inbox.auto().candidate(id))
         withLedger(c) {db -> AutoEntryProcessor(inbox).restoreIgnored(id,db,c.databaseName)}

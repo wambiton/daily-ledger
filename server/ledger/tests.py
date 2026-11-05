@@ -12,7 +12,7 @@ class FoundationTests(TestCase):
         self.assertEqual(result.status_code,200)
         self.assertTrue(result.json()['database'])
         self.assertEqual(result.json()['backup_formats'], [1,2,3,4,5])
-        self.assertEqual(result.json()['app_version'], '0.7.0')
+        self.assertEqual(result.json()['app_version'], '0.7.14')
 
     def test_password_hashed(self):
         self.assertNotEqual(self.user.password,'testing-only-123')

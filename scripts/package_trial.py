@@ -31,6 +31,8 @@ def main():
         stage = Path(temp)/'LedgerBackup'
         shutil.copytree(bundle, stage)
         shutil.copy2(ROOT/'docs/电脑端外网备份使用说明.md',stage/'使用说明.md')
+        shutil.copy2(ROOT/'docs/联调试用包说明.md',stage/'联调试用包说明.md')
+        shutil.copy2(ROOT/'docs/备份历史与独立恢复.md',stage/'备份历史与独立恢复.md')
         notices = stage/'ThirdPartyNotices'
         notices.mkdir()
         for distribution in distributions():
@@ -83,15 +85,15 @@ def main():
     shutil.copy2(ROOT/'docs/联调试用包说明.md', output/'先读我.md')
     shutil.copy2(ROOT/'docs/备份历史与独立恢复.md', output/'备份历史与独立恢复.md')
     (output/'验收状态.txt').write_text(
-        '本次为本地联调试用包，不是新的公开正式版本。\n'
+        '本次为0.7.14试用构建，不代表正式版全场景验收完成。\n'
         '电脑实际EXE：v2/v5历史、非法规则拒绝、重启登录及改密测试通过；41项服务端回归通过。\n'
         '手机到实际EXE：两版v5上传、历史独立恢复、规则/确认状态及账号隔离专项1项通过。\n'
-        '最近手机业务验证为96项JVM、3项通知真机专项通过；未在本次打包时重跑完整套件。\n'
+        '最近手机业务验证为108项JVM、3项通知真机专项通过；未在本次打包时重跑完整套件。\n'
         '联调使用USB本机转发和隔离模拟账号，不代表公网、扫码UI、真实SMTP或多机型重新验收。\n'
-        '电脑内部版本标识仍为0.7.0，本包构建支持备份格式1至5，不要与旧公开包混用。\n', encoding='utf-8')
+        '手机与电脑统一为0.7.14，电脑支持备份格式1至5。\n', encoding='utf-8')
     revision = subprocess.check_output(['git','-c','safe.directory='+ROOT.as_posix(),'rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     manifest = {'source_revision': revision, 'phone_version': version,
-                'desktop_internal_version': '0.7.0', 'backup_formats': [1,2,3,4,5],
+                'desktop_internal_version': '0.7.14', 'backup_formats': [1,2,3,4,5],
                 'desktop_exe_sha256': hashlib.sha256(required[0].read_bytes()).hexdigest(),
                 'distribution': 'local-integration-trial', 'built_at': datetime.now().isoformat()}
     (output/'构建信息.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')

@@ -65,7 +65,7 @@ def main():
     process=start()
     try:
         status,health=call('health/')
-        assert status==200 and health['app_version']=='0.7.0' and 3 in health['backup_formats']
+        assert status==200 and health['app_version']=='0.7.14' and 3 in health['backup_formats']
         status,account=call('auth/login/',{'email':email,'password':'12345678'});assert status==200
         category=str(uuid.uuid4());entry=str(uuid.uuid4())
         payload={'format_version':3,'categories':[{'id':category,'type':'expense','name':'餐饮','default_key':None}],

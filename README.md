@@ -37,20 +37,20 @@ Android 本地记账 · 多周期比较 · 预算提醒 · 自己电脑上的备
 
 ## 源码开发进度
 
-截至 2026-11-01，`main` 已增加历史备份独立恢复、智能命名规则、首次确认后按授权自动记账、来源合并保护，以及通知栏确认/改名/忽略操作。部分后台与锁屏场景仍在验收，对账补漏尚未完成。
+截至 2026-11-05，0.7.14 试用版包含历史备份独立恢复、智能命名规则、首次确认后按授权自动记账、来源合并保护、通知栏确认/改名/忽略/撤销，以及手动忽略记录恢复。
 
-**源码进度领先于下方下载包，本次同步不发布新安装包。** 现有 Release 仍为手机 0.7.12 / 电脑 0.7.0；新增智能规则备份需要支持 v5 的电脑服务，公开电脑 ZIP 尚未更新。详细验证范围见 [开发进度](开发进度.md)，请勿将源码功能视为现有下载包已包含的功能。
+手机与电脑均更新为 **0.7.14**，电脑支持 v1—v5 备份。新增通知操作和页面已通过电脑业务测试与构建，尚未完成本轮真机锁屏、后台唤醒和公网专项验收；账单对账补漏仍未实现。详细范围见 [开发进度](开发进度.md)。
 
 ## 下载安装
 
 | 平台 | 下载 | 版本与安装方式 |
 | :--- | :--- | :--- |
-| Android 手机 | [下载手机 APK](https://github.com/wambiton/daily-ledger/releases/download/v0.7.12/PersonalLedger-Android-0.7.12.apk) | 0.7.12 · Android 8.0 及以上；已有用户覆盖安装 |
-| Windows 电脑 | [下载电脑端 ZIP](https://github.com/wambiton/daily-ledger/releases/download/v0.7.12/PersonalLedger-Windows-0.7.0.zip) | 0.7.0 · 完整解压后运行 `LedgerBackup.exe` |
+| Android 手机 | [下载手机 APK](https://github.com/wambiton/daily-ledger/releases/download/v0.7.14/PersonalLedger-Android-0.7.14.apk) | 0.7.14 · Android 8.0 及以上；已有用户覆盖安装 |
+| Windows 电脑 | [下载电脑端 ZIP](https://github.com/wambiton/daily-ledger/releases/download/v0.7.14/PersonalLedger-Windows-0.7.14.zip) | 0.7.14 · 完整解压后运行 `LedgerBackup.exe` |
 
-[查看发布页与全部附件](https://github.com/wambiton/daily-ledger/releases/tag/v0.7.12) · [安装说明](https://github.com/wambiton/daily-ledger/releases/download/v0.7.12/INSTALL.md) · [SHA-256 校验文件](https://github.com/wambiton/daily-ledger/releases/download/v0.7.12/SHA256SUMS.txt)
+[查看发布页与全部附件](https://github.com/wambiton/daily-ledger/releases/tag/v0.7.14) · [安装说明](https://github.com/wambiton/daily-ledger/releases/download/v0.7.14/INSTALL.md) · [SHA-256 校验文件](https://github.com/wambiton/daily-ledger/releases/download/v0.7.14/SHA256SUMS.txt)
 
-> 当前为试用发布，手机 APK 使用调试签名。手机 0.7.12 与电脑 0.7.0 是本次配套组合。升级请保留原有数据，不要先卸载手机应用；电脑 ZIP 中的 `_internal` 文件夹必须与 EXE 一起保留。银行短信支持已适配的招商银行95555模板；只处理开启后的新消息。
+> 当前为试用发布，手机 APK 使用调试签名。手机 0.7.14 与电脑 0.7.14 是本次配套组合。升级请保留原有数据，不要先卸载手机应用；电脑 ZIP 中的 `_internal` 文件夹必须与 EXE 一起保留。银行短信支持已适配的招商银行95555模板；只处理开启后的新消息。
 
 ## 界面预览
 

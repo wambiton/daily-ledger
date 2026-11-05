@@ -36,10 +36,23 @@ object AutoCapture {
             ?.takeIf {it.owner==c.owner && it.type==c.type}?.name.orEmpty()
         notify(context,c,category)
     }
+    const val RESULT_CHANNEL="ledger-auto-saved"
+    fun resultNotificationsEnabled(context: Context)=prefs(context).getBoolean("result_notifications",true)
+    fun setResultNotifications(context: Context,enabled: Boolean) {
+        prefs(context).edit().putBoolean("result_notifications",enabled).apply()
+        if(!enabled) {
+            val manager=context.getSystemService(NotificationManager::class.java)
+            manager.activeNotifications.filter {it.notification.channelId==RESULT_CHANNEL}.forEach {manager.cancel(it.tag,it.id)}
+        }
+    }
     fun notify(context: Context,c: PaymentCandidate,categoryName: String="") {
         val manager=context.getSystemService(NotificationManager::class.java)
         if(c.status in setOf("ignored","revoked")) {manager.cancel(c.id,8100);return}
-        manager.createNotificationChannel(NotificationChannel("ledger-auto","自动记账结果",NotificationManager.IMPORTANCE_DEFAULT))
+        val saved=c.status in setOf("booked","merged")
+        if(saved && !resultNotificationsEnabled(context)) {manager.cancel(c.id,8100);return}
+        val channel=if(saved) RESULT_CHANNEL else "ledger-auto"
+        manager.createNotificationChannel(NotificationChannel("ledger-auto","自动记账待确认",NotificationManager.IMPORTANCE_DEFAULT))
+        manager.createNotificationChannel(NotificationChannel(RESULT_CHANNEL,"已入账结果",NotificationManager.IMPORTANCE_LOW))
         if(!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val intent=Intent(context,MainActivity::class.java).setAction("com.personal.ledger.AUTO_ENTRY").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val pending=PendingIntent.getActivity(context,8100,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -53,12 +66,13 @@ object AutoCapture {
         } ?: "时间待核对"
         val direction=when(c.type) {"expense" -> "支出"; "income" -> if(c.refund) "退款收入" else "收入"; else -> "收支待核对"}
         val details=listOf(c.channel.ifBlank {c.platform},categoryName.ifBlank {"分类待确认"},direction,time).joinToString(" · ")
-        val publicNotification=NotificationCompat.Builder(context,"ledger-auto")
+        val publicNotification=NotificationCompat.Builder(context,channel)
             .setSmallIcon(android.R.drawable.ic_dialog_info).setContentTitle("个人记账")
             .setContentText("解锁后查看记账消息").build()
-        try { manager.notify(c.id,8100,NotificationCompat.Builder(context,"ledger-auto").setSmallIcon(android.R.drawable.ic_dialog_info)
+        try { manager.notify(c.id,8100,NotificationCompat.Builder(context,channel).setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(if(isPending) "$name · $amount" else if(c.status=="merged") "已合并重复来源" else if(c.status=="booked") "已自动记账" else "待确认账目").setContentText(if(isPending) details else text)
-            .setContentIntent(pending).setAutoCancel(true)
+            .setContentIntent(pending).setAutoCancel(true).setOnlyAlertOnce(true)
+            .apply {if(saved) setSilent(true)}
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE).setPublicVersion(publicNotification)
             .apply { if(c.status=="pending") {
                 setStyle(NotificationCompat.BigTextStyle().bigText(details+"\n"+c.reason+"；"+text))

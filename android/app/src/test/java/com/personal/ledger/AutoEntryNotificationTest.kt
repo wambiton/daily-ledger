@@ -71,4 +71,39 @@ class AutoEntryNotificationTest {
         AutoCapture.notify(context,c.copy(status="revoked"))
         assertTrue(manager.activeNotifications.none {it.tag==c.id})
     }
+
+    @Test fun resultSwitchClearsOnlySavedAlertsAndKeepsPendingActions() {
+        val context=ApplicationProvider.getApplicationContext<Context>()
+        val manager=context.getSystemService(NotificationManager::class.java)
+        val pending=PaymentCandidate("review-setting","demo.db","a","模拟","支付宝","2026-10-26",850,"expense","商户","",false,"pending","")
+        val saved=pending.copy(id="saved-setting",status="booked",entryId="entry")
+        try {
+            AutoCapture.setResultNotifications(context,true)
+            AutoCapture.notify(context,pending);AutoCapture.notify(context,saved)
+            assertEquals(NotificationManager.IMPORTANCE_LOW,manager.getNotificationChannel(AutoCapture.RESULT_CHANNEL).importance)
+            assertEquals(AutoCapture.RESULT_CHANNEL,manager.activeNotifications.single {it.tag==saved.id}.notification.channelId)
+            AutoCapture.setResultNotifications(context,false)
+            assertTrue(manager.activeNotifications.none {it.tag==saved.id})
+            assertEquals(3,manager.activeNotifications.single {it.tag==pending.id}.notification.actions.size)
+            AutoCapture.notify(context,saved.copy(status="merged"))
+            assertTrue(manager.activeNotifications.none {it.tag==saved.id})
+            AutoCapture.notify(context,pending.copy(suggestedTitle="早餐"))
+            assertEquals(3,manager.activeNotifications.single {it.tag==pending.id}.notification.actions.size)
+            AutoCapture.setResultNotifications(context,true)
+            AutoCapture.notify(context,saved)
+            assertEquals(1,manager.activeNotifications.single {it.tag==saved.id}.notification.actions.size)
+        } finally {AutoCapture.prefs(context).edit().remove("result_notifications").commit()}
+    }
+    @Test fun disablingResultsDoesNotLeaveAConfirmedCandidateLookingPending() {
+        val context=ApplicationProvider.getApplicationContext<Context>()
+        val manager=context.getSystemService(NotificationManager::class.java)
+        val c=PaymentCandidate("transition-setting","demo.db","a","模拟","支付宝","2026-10-26",850,"expense","商户","",false,"pending","")
+        try {
+            AutoCapture.notify(context,c)
+            AutoCapture.setResultNotifications(context,false)
+            AutoCapture.notify(context,c.copy(status="booked",entryId="entry"))
+            assertTrue(manager.activeNotifications.none {it.tag==c.id})
+            assertFalse(AutoCapture.resultNotificationsEnabled(context))
+        } finally {AutoCapture.prefs(context).edit().remove("result_notifications").commit()}
+    }
 }

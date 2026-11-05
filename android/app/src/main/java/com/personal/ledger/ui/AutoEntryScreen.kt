@@ -144,6 +144,13 @@ import java.time.format.DateTimeFormatter
                 if(Build.VERSION.SDK_INT>=33 && androidx.core.content.ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                 else context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName))
             }) {Text("设置记账结果通知")}
+            Row(horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                Text("显示已入账结果通知")
+                Switch(checked=remember(tick){AutoCapture.resultNotificationsEnabled(context)},onCheckedChange={
+                    AutoCapture.setResultNotifications(context,it);tick++
+                },enabled=!busy,modifier=Modifier.testTag("auto-result-notifications"))
+            }
+            Text("已入账通知默认静默显示，可展开撤销。关闭后仍正常记账，可在已处理记录中查看和撤销；待确认通知继续显示，但仍需系统通知权限。",style=MaterialTheme.typography.bodySmall)
             Text("系统权限会向软件提供通知；软件只筛选微信、支付宝支付信息，不保存普通聊天原文。关闭开关后停止接收。",style=MaterialTheme.typography.bodySmall)
             listOf("微信","支付宝").forEach {platform ->
                 Text("$platform：应用通知 ${whenText(prefs.getLong("seen_$platform",0))}；支付识别 ${whenText(prefs.getLong("recognized_$platform",0))}",style=MaterialTheme.typography.bodySmall)

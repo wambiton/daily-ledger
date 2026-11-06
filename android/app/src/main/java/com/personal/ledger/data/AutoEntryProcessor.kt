@@ -69,7 +69,9 @@ class AutoEntryProcessor(private val inbox: AutoEntryDatabase) {
                     NamingReviewReason.FIRST_CONFIRMATION -> "首次匹配此商户，确认后按已授权规则自动记账"
                     NamingReviewReason.AUTOMATIC_NOT_ALLOWED -> "此规则仅建议名称，每次需要确认"
                     NamingReviewReason.RULE_CONFLICT -> "多条规则冲突，请自行确认名称和分类"
-                    else -> "支付信息或商户不明确，请核对"
+                    NamingReviewReason.MISSING_MERCHANT -> "商户或支付渠道不明确，不能沿用自动许可"
+                    NamingReviewReason.UNCERTAIN_PAYMENT -> "支付信息或金额待核对，暂不自动入账"
+                    NamingReviewReason.SOURCE_CONFLICT -> "支付来源存在冲突，请先核对是否同笔消费"
                 })
                 inbox.auto().update(candidate);return@withTransaction candidate
             }

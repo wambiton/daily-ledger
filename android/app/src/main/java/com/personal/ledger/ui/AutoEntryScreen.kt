@@ -216,6 +216,12 @@ import java.time.format.DateTimeFormatter
     var replace by rememberSaveable{mutableStateOf<String?>(null)}
     LazyColumn(Modifier.fillMaxSize().testTag("auto-review"),verticalArrangement=Arrangement.spacedBy(10.dp),contentPadding=PaddingValues(bottom=24.dp)) {
         item {Text("${c.bookLabel} · ${if(c.status=="pending") "确认后才入账" else "修改已入账记录"}",style=MaterialTheme.typography.titleLarge);Text(c.reason)}
+        if(review.explanation.isNotEmpty()) item {
+            Card(Modifier.fillMaxWidth()) {Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                Text("记录与规则说明",style=MaterialTheme.typography.titleMedium)
+                review.explanation.forEach {Text(it,style=MaterialTheme.typography.bodySmall)}
+            }}
+        }
         if(review.sources.size>1) item {
             Text("识别来源（合并账目只计一笔）",style=MaterialTheme.typography.titleMedium)
             review.sources.forEach {source ->

@@ -15,7 +15,7 @@ class AutoEntryViewModel(app: Application): AndroidViewModel(app) {
     val rows=inbox.auto().candidates().stateIn(viewModelScope,SharingStarted.WhileSubscribed(5000),emptyList())
     val error=MutableStateFlow<String?>(null)
     val busy=MutableStateFlow(false)
-    data class Review(val candidate: PaymentCandidate,val categories: List<Category>,val matches: List<Entry>,val entry: Entry?,val sources: List<PaymentCandidate> = emptyList())
+    data class Review(val candidate: PaymentCandidate,val categories: List<Category>,val matches: List<Entry>,val entry: Entry?,val sources: List<PaymentCandidate> = emptyList(),val explanation: List<String> = emptyList())
     val review=MutableStateFlow<Review?>(null)
     fun open(c: PaymentCandidate) = action {
         withLedger(c) {db ->
@@ -23,7 +23,7 @@ class AutoEntryViewModel(app: Application): AndroidViewModel(app) {
             val fresh=if(selected.status=="linked") requireNotNull(selected.mergedInto?.let {inbox.auto().candidate(it)}) else selected
             val root=fresh.mergedInto?.let {inbox.auto().candidate(it)} ?: fresh
             val sources=(listOf(root)+inbox.auto().children(root.id)).filter {it.owner==c.owner && it.databaseName==c.databaseName}
-            review.value=Review(fresh,db.ledger().categorySnapshot(c.owner),AutoEntryProcessor(inbox).matches(fresh,db),fresh.entryId?.let {db.ledger().entry(it)},sources)
+            review.value=Review(fresh,db.ledger().categorySnapshot(c.owner),AutoEntryProcessor(inbox).matches(fresh,db),fresh.entryId?.let {db.ledger().entry(it)},sources,NamingExplanation.describe(fresh,NamingRuleStore(db,c.databaseName,c.owner).snapshot().map {it.rule}))
         }
     }
     fun save(type: String,category: String,amount: String,date: String,note: String,remember: Boolean,replace: String?,title: String?=null) = action {

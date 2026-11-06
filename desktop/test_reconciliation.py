@@ -70,6 +70,26 @@ class ReconciliationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 supplement(rows,category)
 
+    def test_excel_text_order_and_dates_are_retained_numeric_order_is_not_trusted(self):
+        from datetime import datetime
+        from io import BytesIO
+        from openpyxl import Workbook
+        book = Workbook()
+        book.active.title = '说明'
+        sheet = book.create_sheet('微信明细')
+        sheet.append(['这是模拟微信账单'])
+        sheet.append(['交易时间','交易对方','收/支','金额(元)','当前状态','交易单号'])
+        for amount,order in [(8.50,'000012345678901234567890'),(9,12345678901234567890),('=SUM(8,1)','abc')]:
+            sheet.append([datetime(2026,11,1,8,30),'早餐','支出',amount,'支付成功',order])
+        stream = BytesIO()
+        book.save(stream)
+        rows = compare(stream.getvalue(),ledger())
+        self.assertEqual(rows[0].label,'所选账本中未找到')
+        csv_data = '交易时间,交易对方,收/支,金额,当前状态,交易单号\n2026-11-01 08:30:00,早餐,支出,8.50,支付成功,000012345678901234567890'.encode()
+        self.assertEqual(compare(csv_data,ledger())[0].source_id,rows[0].source_id)
+        self.assertEqual(rows[1].label,'缺少可靠订单号，请手动核对')
+        self.assertEqual(rows[2].label,'请核对日期或金额')
+
     def test_preview_from_picker_preserves_files(self):
         with tempfile.TemporaryDirectory() as temp:
             a,b=Path(temp)/'bill.csv',Path(temp)/'ledger.json'

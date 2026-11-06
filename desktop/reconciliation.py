@@ -5,6 +5,7 @@ import json
 import re
 import time
 import uuid
+import zipfile
 from typing import NamedTuple
 from collections import Counter
 from datetime import date, datetime
@@ -70,14 +71,62 @@ def entry_counts(data):
     return active, trash
 
 
+def statement_lines(data):
+    if not data.startswith(b'PK'):
+        try:
+            text = data.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            text = data.decode('gb18030')
+        yield from csv.reader(io.StringIO(text, newline=''), strict=True)
+        return
+
+    from openpyxl import load_workbook
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        members = archive.infolist()
+        if len(members) > 1500 or sum(member.file_size for member in members) > 80 * 1024 * 1024:
+            raise ValueError('工作簿过大，请缩小日期范围后导出。')
+    book = load_workbook(io.BytesIO(data), read_only=True, data_only=False, keep_links=False)
+    try:
+        selected = None
+        for sheet in book.worksheets:
+            for cells in sheet.iter_rows(min_row=1,max_row=200,max_col=64,values_only=True):
+                labels = {str(cell).strip() for cell in cells if cell is not None}
+                if {'交易时间','交易对方','收/支'} <= labels:
+                    if selected is not None:
+                        raise ValueError('工作簿包含多张交易明细表，请单独导出。')
+                    selected = sheet
+                    break
+        if selected is None:
+            raise ValueError('工作簿中没有找到交易明细。')
+        order_column = None
+        selected.reset_dimensions()
+        for index,cells in enumerate(selected.iter_rows(max_col=64)):
+            if index >= 50200:
+                raise ValueError('交易明细过多，请分日期范围导出。')
+            fields = []
+            for column,cell in enumerate(cells):
+                value = cell.value
+                if value is None or cell.data_type == 'f':
+                    fields.append('')
+                elif column == order_column and not isinstance(value,str):
+                    # A numeric cell may already have lost significant digits in Excel.
+                    fields.append('')
+                else:
+                    fields.append(str(value))
+            if order_column is None:
+                for column,field in enumerate(fields):
+                    if field.strip() in ('交易订单号','交易单号'):
+                        order_column = column
+                        break
+            yield fields
+    finally:
+        book.close()
+
+
 def compare(csv_data, ledger_data):
     active, trash = entry_counts(ledger_data)
     imported = set(json.loads(ledger_data.decode('utf-8-sig')).get('import_sources', []))
-    try:
-        text = csv_data.decode('utf-8-sig')
-    except UnicodeDecodeError:
-        text = csv_data.decode('gb18030')
-    reader = csv.reader(io.StringIO(text, newline=''), strict=True)
+    reader = statement_lines(csv_data)
     required = {'交易时间', '交易对方', '收/支', '金额', '交易状态', '交易订单号'}
     for row in reader:
         names = [s.strip().replace('（元）', '').replace('(元)', '') for s in row]
@@ -88,7 +137,7 @@ def compare(csv_data, ledger_data):
         if required.issubset(names):
             break
     else:
-        raise ValueError('没有找到微信或支付宝交易明细表头，请先解压并选择 CSV 文件。')
+        raise ValueError('没有找到微信或支付宝交易明细表头，请先解压并选择 CSV 或 XLSX 文件。')
     if any(names.count(name) != 1 for name in required):
         raise ValueError('账单列名重复，请重新导出。')
     rows = []
@@ -127,6 +176,8 @@ def compare(csv_data, ledger_data):
                     label = MISSING
             except ValueError:
                 label = '请核对日期或金额'
+        if label == MISSING and not source_id:
+            label = '缺少可靠订单号，请手动核对'
         preview.append(PaymentRow(stamp, merchant, direction, amount, source_id, platform, label))
     return preview
 
@@ -134,7 +185,7 @@ def compare(csv_data, ledger_data):
 def open_preview(parent):
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
-    bill = filedialog.askopenfilename(parent=parent, title='选择已解压的微信或支付宝交易明细 CSV', filetypes=[('交易明细 CSV', '*.csv')])
+    bill = filedialog.askopenfilename(parent=parent, title='选择已解压的微信或支付宝交易明细', filetypes=[('交易明细 CSV 或 XLSX', '*.csv *.xlsx')])
     if not bill:
         return
     ledger = filedialog.askopenfilename(parent=parent, title='选择同一日期范围的手机账本 JSON', filetypes=[('手机账本 JSON', '*.json')])
@@ -144,8 +195,8 @@ def open_preview(parent):
         ledger_data = read_file(ledger)
         rows = compare(read_file(bill), ledger_data)
         categories = json.loads(ledger_data.decode('utf-8-sig')).get('categories', [])
-    except (OSError, ValueError, KeyError, TypeError, csv.Error):
-        messagebox.showerror('无法核对', '请检查文件是否为已解压的微信或支付宝交易明细 CSV 和手机导出的账本 JSON，两份文件均需在20MB以内。', parent=parent)
+    except (OSError, ValueError, KeyError, TypeError, csv.Error, zipfile.BadZipFile, SyntaxError):
+        messagebox.showerror('无法核对', '请检查文件是否为已解压的微信或支付宝交易明细 CSV/XLSX 和手机导出的账本 JSON，两份文件均需在20MB以内。', parent=parent)
         return
     window = tk.Toplevel(parent)
     window.title('支付账单核对')

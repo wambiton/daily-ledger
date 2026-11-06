@@ -38,6 +38,16 @@ class ReconciliationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             compare(b'wrong,header', ledger())
 
+    def test_wechat_aliases_currency_and_refund(self):
+        header = '交易时间,交易对方,收/支,金额(元),当前状态,交易单号'
+        rows = ['2026-11-01,早餐,支出,¥8.50,支付成功,wx1',
+                '2026-11-01,早餐退款,收入,￥8.50,退款成功,wx2',
+                '2026-11-01,转账,/,8.50,已存入零钱,wx3',
+                '2026-11-01,早餐,支出,¥8.50,已全额退款,wx4']
+        data = ('微信账单\n'+header+'\n'+'\n'.join(rows)).encode('utf-8-sig')
+        labels = [r[-1] for r in compare(data, ledger(entry()))]
+        self.assertEqual(labels,['同日同额 1 笔，待核对','所选账本中未找到','不计入收支','请核对交易状态'])
+
     def test_preview_from_picker_preserves_files(self):
         with tempfile.TemporaryDirectory() as temp:
             a,b=Path(temp)/'bill.csv',Path(temp)/'ledger.json'

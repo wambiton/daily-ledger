@@ -1,4 +1,4 @@
-"""Read-only comparison of an Alipay CSV and a mobile ledger export."""
+"""Read-only comparison of a payment CSV and a mobile ledger export."""
 import csv
 import io
 import json
@@ -41,10 +41,14 @@ def compare(csv_data, ledger_data):
     required = {'交易时间', '交易对方', '收/支', '金额', '交易状态', '交易订单号'}
     for row in reader:
         names = [s.strip().replace('（元）', '').replace('(元)', '') for s in row]
+        wechat = '当前状态' in names and '交易单号' in names
+        if wechat:
+            aliases = {'当前状态':'交易状态', '交易单号':'交易订单号'}
+            names = [aliases.get(name, name) for name in names]
         if required.issubset(names):
             break
     else:
-        raise ValueError('没有找到支付宝交易明细表头，请先解压并选择 CSV 文件。')
+        raise ValueError('没有找到微信或支付宝交易明细表头，请先解压并选择 CSV 文件。')
     if any(names.count(name) != 1 for name in required):
         raise ValueError('账单列名重复，请重新导出。')
     rows = []
@@ -57,13 +61,15 @@ def compare(csv_data, ledger_data):
     preview = []
     for r in rows:
         stamp, merchant, direction, amount, state, order = (r.get(k, '') for k in ('交易时间','交易对方','收/支','金额','交易状态','交易订单号'))
+        if wechat:
+            amount = amount.removeprefix('¥').removeprefix('￥').strip()
         kind = {'收入':'income','支出':'expense'}.get(direction)
         label = '请核对交易状态'
         if order and ids[order] > 1:
             label = '账单内订单号重复'
-        elif direction in ('不计收支', '不计入收支') or state in ('交易关闭', '支付失败'):
+        elif direction in ('不计收支', '不计入收支', '/') or state in ('交易关闭', '支付失败'):
             label = '不计入收支'
-        elif kind and (state in ('交易成功','支付成功') or (kind == 'income' and state == '退款成功')):
+        elif kind and (state in ('交易成功','支付成功') or (wechat and kind == 'income' and state in ('已收钱','已存入零钱')) or (kind == 'income' and state == '退款成功')):
             try:
                 day = datetime.fromisoformat(stamp).date().isoformat()
                 if not re.fullmatch(r'[0-9]{1,10}(?:\.[0-9]{1,2})?', amount) or Decimal(amount) <= 0:
@@ -84,7 +90,7 @@ def compare(csv_data, ledger_data):
 def open_preview(parent):
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
-    bill = filedialog.askopenfilename(parent=parent, title='选择已解压的支付宝交易明细 CSV', filetypes=[('支付宝 CSV', '*.csv')])
+    bill = filedialog.askopenfilename(parent=parent, title='选择已解压的微信或支付宝交易明细 CSV', filetypes=[('交易明细 CSV', '*.csv')])
     if not bill:
         return
     ledger = filedialog.askopenfilename(parent=parent, title='选择同一日期范围的手机账本 JSON', filetypes=[('手机账本 JSON', '*.json')])
@@ -93,10 +99,10 @@ def open_preview(parent):
     try:
         rows = compare(read_file(bill), read_file(ledger))
     except (OSError, ValueError, KeyError, TypeError, csv.Error):
-        messagebox.showerror('无法核对', '请检查文件是否为已解压的支付宝交易明细 CSV 和手机导出的账本 JSON，两份文件均需在20MB以内。', parent=parent)
+        messagebox.showerror('无法核对', '请检查文件是否为已解压的微信或支付宝交易明细 CSV 和手机导出的账本 JSON，两份文件均需在20MB以内。', parent=parent)
         return
     window = tk.Toplevel(parent)
-    window.title('支付宝账单核对')
+    window.title('支付账单核对')
     ttk.Label(window, text='同日同额只能作为线索。请核对导出日期范围，再决定是否到手机补记。').pack(padx=10,pady=6)
     cols = ('交易时间','交易对方','收/支','金额（元）','核对结果')
     table = ttk.Treeview(window, columns=cols, show='headings', height=15)

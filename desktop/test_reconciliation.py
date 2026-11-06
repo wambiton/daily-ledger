@@ -99,6 +99,45 @@ class ReconciliationTests(unittest.TestCase):
             actual = supplement(compare(data, ledger()),expected['categories'][0])
         self.assertEqual(actual,expected)
 
+    def test_filter_then_export_targets_the_selected_original_transaction(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            a,b,dest = (directory/name for name in ('bill.csv','ledger.json','supplement.json'))
+            category = dict(id='b3e70ec0-26fa-44a7-bd19-eaa82100a650',name='餐饮',type='expense',default_key=None)
+            record = dict(entry(),title='早餐',note='模拟备注',category_id=category['id'])
+            b.write_text(json.dumps(dict(format_version=4,entries=[record,dict(record,deleted_at=123)],categories=[category])),encoding='utf-8')
+            a.write_bytes(bill('2026-11-01,店一,支出,8.50,交易成功,A','2026-11-01,店二,支出,9.20,交易成功,B'))
+            root=tk.Tk();root.withdraw()
+            def walk(widget):
+                for child in widget.winfo_children():
+                    yield child
+                    yield from walk(child)
+            try:
+                with patch('tkinter.filedialog.askopenfilename',side_effect=[str(a),str(b)]):
+                    open_preview(root)
+                win=next(w for w in root.winfo_children() if isinstance(w,tk.Toplevel))
+                grid=next(w for w in walk(win) if isinstance(w,ttk.Treeview))
+                grid.selection_set('0')
+                next(w for w in walk(win) if isinstance(w,ttk.Button) and w.cget('text')=='查看同日同额候选').invoke()
+                detail=next(w for w in walk(win) if isinstance(w,tk.Toplevel))
+                candidates=next(w for w in walk(detail) if isinstance(w,ttk.Treeview))
+                values=[candidates.item(i,'values') for i in candidates.get_children()]
+                self.assertEqual(values,[('正常','餐饮','早餐','模拟备注'),('回收站','餐饮','早餐','模拟备注')])
+                detail.destroy()
+                next(w for w in walk(win) if isinstance(w,ttk.Checkbutton)).invoke()
+                self.assertEqual(grid.get_children(),('1',))
+                grid.selection_set('1')
+                next(w for w in walk(win) if isinstance(w,ttk.Combobox)).current(0)
+                export=next(w for w in walk(win) if isinstance(w,ttk.Button) and w.cget('text')=='导出已核实的选中记录')
+                with patch('tkinter.filedialog.asksaveasfilename',return_value=str(dest)),patch('tkinter.messagebox.showinfo'):
+                    export.invoke()
+                result=json.loads(dest.read_text(encoding='utf-8'))['entries']
+                self.assertEqual(len(result),1)
+                self.assertEqual(result[0]['amount_fen'],920)
+                self.assertEqual(result[0]['note'],'支付宝 · 店二')
+            finally:
+                root.destroy()
+
     def test_preview_from_picker_preserves_files(self):
         with tempfile.TemporaryDirectory() as temp:
             a,b=Path(temp)/'bill.csv',Path(temp)/'ledger.json'

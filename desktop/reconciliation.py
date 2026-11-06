@@ -7,7 +7,7 @@ import time
 import uuid
 import zipfile
 from typing import NamedTuple
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -57,18 +57,20 @@ def read_file(path):
     return data
 
 
-def entry_counts(data):
-    payload = json.loads(data.decode('utf-8-sig'))
+def index_entries(payload):
     if not isinstance(payload, dict) or payload.get('format_version') not in range(1, 6) or not isinstance(payload.get('entries'), list):
         raise ValueError('请选择手机“文件导入导出”生成的账本 JSON。')
     active, trash = Counter(), Counter()
+    candidates = defaultdict(list)
     for entry in payload['entries']:
         if not isinstance(entry, dict) or type(entry.get('amount_fen')) is not int or entry.get('type') not in ('income', 'expense'):
             raise ValueError('账本记录格式有误，请重新导出。')
         day = date.fromisoformat(entry['date']).isoformat()
         index = active if entry.get('deleted_at') is None else trash
-        index[day, entry['type'], entry['amount_fen']] += 1
-    return active, trash
+        key = day, entry['type'], entry['amount_fen']
+        index[key] += 1
+        candidates[key].append(entry)
+    return active, trash, candidates
 
 
 def statement_lines(data):
@@ -124,8 +126,14 @@ def statement_lines(data):
 
 
 def compare(csv_data, ledger_data):
-    active, trash = entry_counts(ledger_data)
-    imported = set(json.loads(ledger_data.decode('utf-8-sig')).get('import_sources', []))
+    payload = json.loads(ledger_data.decode('utf-8-sig'))
+    indexes = index_entries(payload)
+    return compare_statement(csv_data, payload, indexes)
+
+
+def compare_statement(csv_data, payload, indexes):
+    active, trash, _ = indexes
+    imported = set(payload.get('import_sources', []))
     reader = statement_lines(csv_data)
     required = {'交易时间', '交易对方', '收/支', '金额', '交易状态', '交易订单号'}
     for row in reader:
@@ -193,8 +201,10 @@ def open_preview(parent):
         return
     try:
         ledger_data = read_file(ledger)
-        rows = compare(read_file(bill), ledger_data)
-        categories = json.loads(ledger_data.decode('utf-8-sig')).get('categories', [])
+        payload = json.loads(ledger_data.decode('utf-8-sig'))
+        indexes = index_entries(payload)
+        rows = compare_statement(read_file(bill), payload, indexes)
+        categories = payload.get('categories', [])
     except (OSError, ValueError, KeyError, TypeError, csv.Error, zipfile.BadZipFile, SyntaxError):
         messagebox.showerror('无法核对', '请检查文件是否为已解压的微信或支付宝交易明细 CSV/XLSX 和手机导出的账本 JSON，两份文件均需在20MB以内。', parent=parent)
         return
@@ -212,6 +222,49 @@ def open_preview(parent):
     controls.pack(side='bottom',fill='x')
     bar.pack(side='right',fill='y')
     table.pack(fill='both',expand=True)
+    top = ttk.Frame(window)
+    top.pack(before=table,fill='x')
+    missing_only = tk.BooleanVar(master=window)
+    visible = list(range(len(rows)))
+    def change_filter():
+        nonlocal visible,page
+        visible = [i for i,row in enumerate(rows) if row.label == MISSING] if missing_only.get() else list(range(len(rows)))
+        page = 0
+        render(0)
+    ttk.Checkbutton(top,text='仅看可补记的缺失候选',variable=missing_only,command=change_filter).pack(side='left')
+    def show_candidates():
+        selected = table.selection()
+        if len(selected) != 1:
+            messagebox.showinfo('查看候选','请先选中一条交易。',parent=window)
+            return
+        row = rows[int(selected[0])]
+        matches = []
+        if row.label.startswith('同日同额 ') or row.label == '回收站有同日同额记录':
+            key = (datetime.fromisoformat(row.stamp).date().isoformat(),
+                   {'收入':'income','支出':'expense'}[row.direction], int(Decimal(row.amount)*100))
+            matches = indexes[2].get(key, [])
+        if not matches:
+            messagebox.showinfo('查看候选','此行在所选账本中没有可展示的同日同额候选。',parent=window)
+            return
+        detail = tk.Toplevel(window)
+        detail.title('所选账本中的同日同额记录')
+        ttk.Label(detail,text=f'{row.stamp} · {row.merchant} · {row.direction} {row.amount} 元').pack(anchor='w',padx=8,pady=5)
+        section = ttk.Frame(detail)
+        section.pack(fill='both',expand=True)
+        grid = ttk.Treeview(section,columns=('状态','分类','名称','备注'),show='headings',height=min(12,len(matches)))
+        for col,width in [('状态',85),('分类',90),('名称',140),('备注',300)]:
+            grid.heading(col,text=col)
+            grid.column(col,width=width)
+        scroll = ttk.Scrollbar(section,command=grid.yview)
+        grid.configure(yscrollcommand=scroll.set)
+        scroll.pack(side='right',fill='y')
+        grid.pack(fill='both',expand=True)
+        category_names = {c['id']:c['name'] for c in options}
+        for entry in matches:
+            grid.insert('', 'end',values=('正常' if entry.get('deleted_at') is None else '回收站',
+                category_names.get(entry.get('category_id'),'分类未知'),entry.get('title',''),entry.get('note','')))
+    ttk.Button(top,text='查看同日同额候选',command=show_candidates).pack(side='left')
+    table.bind('<Double-1>',lambda event:show_candidates())
     options = [c for c in categories if isinstance(c, dict) and c.get('type') in ('expense','income')
                and isinstance(c.get('id'),str) and isinstance(c.get('name'),str)]
     selection = ttk.Combobox(controls,state='readonly',values=[
@@ -242,11 +295,12 @@ def open_preview(parent):
         nonlocal page
         page += offset
         table.delete(*table.get_children())
-        for index, row in enumerate(rows[page*100:(page+1)*100], start=page*100):
+        for index in visible[page*100:(page+1)*100]:
+            row = rows[index]
             table.insert('', 'end',iid=str(index),values=(row.stamp,row.merchant,row.direction,row.amount,row.label))
-        caption.set(f'共 {len(rows)} 条 · 第 {page+1}/{max(1,(len(rows)+99)//100)} 页')
+        caption.set(f'显示 {len(visible)} / {len(rows)} 条 · 第 {page+1}/{max(1,(len(visible)+99)//100)} 页')
         prev.configure(state='normal' if page else 'disabled')
-        nxt.configure(state='normal' if (page+1)*100<len(rows) else 'disabled')
+        nxt.configure(state='normal' if (page+1)*100<len(visible) else 'disabled')
     prev=ttk.Button(controls,text='上一页',command=lambda:render(-1))
     nxt=ttk.Button(controls,text='下一页',command=lambda:render(1))
     prev.pack(side='left'); nxt.pack(side='right')

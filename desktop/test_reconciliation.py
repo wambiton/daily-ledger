@@ -6,7 +6,7 @@ from pathlib import Path
 from tkinter import ttk
 from unittest.mock import patch
 
-from reconciliation import compare, open_preview
+from reconciliation import compare, open_preview, supplement
 
 HEADER = '交易时间,交易对方,收/支,金额（元）,交易状态,交易订单号\n'
 def bill(*rows):
@@ -47,6 +47,28 @@ class ReconciliationTests(unittest.TestCase):
         data = ('微信账单\n'+header+'\n'+'\n'.join(rows)).encode('utf-8-sig')
         labels = [r[-1] for r in compare(data, ledger(entry()))]
         self.assertEqual(labels,['同日同额 1 笔，待核对','所选账本中未找到','不计入收支','请核对交易状态'])
+
+    def test_supplement_has_stable_ids_and_recognizes_prior_import(self):
+        cat = dict(id='b3e70ec0-26fa-44a7-bd19-eaa82100a650',name='餐饮',type='expense',default_key=None)
+        bill_data = bill('2026-11-01,餐厅,支出,8.50,交易成功,123')
+        rows = compare(bill_data, ledger())
+        first = supplement(rows,cat)
+        self.assertEqual(first['format_version'],2)
+        self.assertEqual(first['entries'][0]['amount_fen'],850)
+        self.assertEqual(first['categories'],[cat])
+        source = first['entries'][0]['id']
+        self.assertEqual(source,supplement(compare(bill_data,ledger()),cat)['entries'][0]['id'])
+        exported = json.dumps(dict(format_version=2,entries=[],import_sources=[source])).encode()
+        self.assertEqual(compare(bill_data,exported)[0].label,'此笔已导入')
+
+    def test_only_eligible_rows_and_matching_category_are_exportable(self):
+        cat = dict(id='b3e70ec0-26fa-44a7-bd19-eaa82100a650',name='餐饮',type='expense',default_key=None)
+        data = bill('2026-11-01,店,支出,8.50,交易成功,123')
+        for rows,category in [(compare(data,ledger(entry())),cat),(compare(data,ledger()),dict(cat,type='income')),
+                              (compare(data,ledger()),None),(compare(data,ledger())*2,cat),
+                              (compare(bill('2026-11-01,店,支出,8.50,交易成功,'),ledger()),cat)]:
+            with self.assertRaises(ValueError):
+                supplement(rows,category)
 
     def test_preview_from_picker_preserves_files(self):
         with tempfile.TemporaryDirectory() as temp:

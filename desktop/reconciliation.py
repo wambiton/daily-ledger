@@ -131,6 +131,20 @@ def compare(csv_data, ledger_data):
     return compare_statement(csv_data, payload, indexes)
 
 
+def refund_receipt(fields):
+    direction = fields.get('收/支', '')
+    category = fields.get('交易类型') or fields.get('交易分类') or ''
+    return fields.get('交易状态') == '退款成功' and (
+        direction == '收入' or (direction == '/' and category in {'商户消费退款','退款','交易退款'}))
+
+
+def order_identity(fields):
+    order = fields.get('交易订单号', '')
+    if not order or re.fullmatch(r'[0-9.]+[eE][+-]?[0-9]+', order):
+        return None
+    return order, refund_receipt(fields)
+
+
 def compare_statement(csv_data, payload, indexes):
     active, trash, _ = indexes
     imported = set(payload.get('import_sources', []))
@@ -154,19 +168,26 @@ def compare_statement(csv_data, payload, indexes):
             continue
         fields = dict(zip(names, (cell.strip() for cell in row)))
         rows.append(fields)
-    ids = Counter(r.get('交易订单号') for r in rows if r.get('交易订单号'))
+        if len(rows) > 50000:
+            raise ValueError('交易明细超过五万条，请分日期范围导出。')
+    ids = Counter(order_identity(r) for r in rows)
     preview = []
     for r in rows:
         stamp, merchant, direction, amount, state, order = (r.get(k, '') for k in ('交易时间','交易对方','收/支','金额','交易状态','交易订单号'))
         if wechat:
             amount = amount.removeprefix('¥').removeprefix('￥').strip()
+        identity = order_identity(r)
+        refund = refund_receipt(r)
+        if refund:
+            direction = '收入'
         kind = {'收入':'income','支出':'expense'}.get(direction)
         label = '请核对交易状态'
         platform = '微信' if wechat else '支付宝'
-        source_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f'daily-ledger:bill:{platform}:{order}')) if order else ''
+        namespace = 'daily-ledger:refund' if refund else 'daily-ledger:bill'
+        source_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f'{namespace}:{platform}:{order}')) if identity else ''
         if source_id and source_id in imported:
             label = '此笔已导入'
-        elif order and ids[order] > 1:
+        elif identity and ids[identity] > 1:
             label = '账单内订单号重复'
         elif direction in ('不计收支', '不计入收支', '/') or state in ('交易关闭', '支付失败'):
             label = '不计入收支'

@@ -138,6 +138,24 @@ class ReconciliationTests(unittest.TestCase):
             finally:
                 root.destroy()
 
+    def test_refund_receipt_and_original_charge_can_share_an_order(self):
+        data = ('交易时间,交易类型,交易对方,收/支,金额,当前状态,交易单号\n'
+                '2025-01-01,商户消费,餐厅,支出,15,支付成功,111\n'
+                '2025-01-02,商户消费退款,餐厅,/,5,退款成功,111').encode()
+        charge,refund=compare(data,ledger())
+        self.assertEqual(charge.label,refund.label)
+        self.assertNotEqual(charge.source_id,refund.source_id)
+        self.assertEqual((charge.direction,refund.direction),('支出','收入'))
+        cat=dict(id='b3e70ec0-26fa-44a7-bd19-eaa82100a650',name='退款',type='income',default_key=None)
+        self.assertEqual(supplement([refund],cat)['entries'][0]['amount_fen'],500)
+        payload=json.dumps(dict(format_version=2,entries=[],import_sources=[charge.source_id])).encode()
+        self.assertEqual([r.label for r in compare(data,payload)],['此笔已导入','所选账本中未找到'])
+
+    def test_rounded_csv_order_is_for_manual_review(self):
+        row=compare(bill('2025-01-01,店,支出,1,交易成功,1.234E+18'),ledger())[0]
+        self.assertFalse(row.source_id)
+        self.assertEqual(row.label,'缺少可靠订单号，请手动核对')
+
     def test_preview_from_picker_preserves_files(self):
         with tempfile.TemporaryDirectory() as temp:
             a,b=Path(temp)/'bill.csv',Path(temp)/'ledger.json'

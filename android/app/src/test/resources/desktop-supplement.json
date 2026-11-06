@@ -1,0 +1,24 @@
+{
+  "format_version": 2,
+  "categories": [
+    {
+      "id": "b3e70ec0-26fa-44a7-bd19-eaa82100a650",
+      "name": "餐饮",
+      "type": "expense",
+      "default_key": null
+    }
+  ],
+  "entries": [
+    {
+      "id": "40493f03-b9b7-55a2-acf1-4f8ed939fb85",
+      "type": "expense",
+      "category_id": "b3e70ec0-26fa-44a7-bd19-eaa82100a650",
+      "amount_fen": 850,
+      "date": "2025-01-01",
+      "note": "微信 · 模拟早餐",
+      "created_at": 1735722000000,
+      "updated_at": 1735722000000,
+      "deleted_at": null
+    }
+  ]
+}

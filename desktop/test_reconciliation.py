@@ -90,6 +90,15 @@ class ReconciliationTests(unittest.TestCase):
         self.assertEqual(rows[1].label,'缺少可靠订单号，请手动核对')
         self.assertEqual(rows[2].label,'请核对日期或金额')
 
+    def test_export_matches_fixture_read_by_android(self):
+        fixture = Path(__file__).resolve().parents[1] / 'android/app/src/test/resources/desktop-supplement.json'
+        expected = json.loads(fixture.read_text(encoding='utf-8'))
+        data = ('交易时间,交易对方,收/支,金额,当前状态,交易单号\n'
+                '2025-01-01 08:00:00,模拟早餐,支出,8.50,支付成功,0000000000000000012345').encode()
+        with patch('reconciliation.time.time',return_value=1735722000):
+            actual = supplement(compare(data, ledger()),expected['categories'][0])
+        self.assertEqual(actual,expected)
+
     def test_preview_from_picker_preserves_files(self):
         with tempfile.TemporaryDirectory() as temp:
             a,b=Path(temp)/'bill.csv',Path(temp)/'ledger.json'

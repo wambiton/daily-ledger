@@ -30,6 +30,22 @@ class PortableBackupTest {
         repo.delete(removed.id)
         return BackupStore(db,"source").export()
     }
+    @Test fun reviewedDesktopSupplementUsesMobileDuplicateChoices() = runBlocking {
+        val file = requireNotNull(javaClass.getResourceAsStream("/desktop-supplement.json"))
+        val payload = JSONObject(file.bufferedReader().use { it.readText() })
+        val target = BackupStore(db, "desktop-test")
+        assertEquals(0, target.preview(payload).duplicates)
+        assertEquals(1, target.append(payload, "confirm"))
+        val entry = db.ledger().entrySnapshot("desktop-test").single()
+        assertEquals(850L, entry.amountFen)
+        assertEquals("微信 · 模拟早餐", entry.note)
+        assertEquals(1, target.preview(payload).duplicates)
+        assertTrue(runCatching { target.append(payload, "confirm") }.exceptionOrNull() is BackupStore.DuplicateImport)
+        assertEquals(0, target.append(payload, "skip"))
+        assertEquals(1, target.append(payload, "include"))
+        assertEquals(1700L, db.ledger().entrySnapshot("desktop-test").sumOf { it.amountFen })
+        assertEquals(0, BackupStore(db,"other").preview(payload).duplicates)
+    }
     private fun trashRow(payload: JSONObject): JSONObject {
         val rows = payload.getJSONArray("entries")
         return (0 until rows.length()).map {rows.getJSONObject(it)}.single {!it.isNull("deleted_at")}

@@ -170,6 +170,8 @@ def main():
         quit_app()
         subprocess.Popen(command+['--data-dir',str(target)],creationflags=subprocess.CREATE_NO_WINDOW)
     ttk.Button(buttons,text='选择原账号数据目录',command=choose_data).pack(side='left',padx=4)
+    from reconciliation import open_preview
+    ttk.Button(panel,text='支付宝账单核对（只读预览）',command=lambda:open_preview(root)).pack(anchor='w',pady=4)
     ttk.Label(panel,text='此电脑的账号备份',font=('Microsoft YaHei UI',12,'bold')).pack(anchor='w',pady=(12,5))
     table=ttk.Treeview(panel,columns=('email','time','count','result'),show='headings',height=6)
     for key,title,width in [('email','QQ邮箱',220),('time','最近成功备份时间',230),('count','账目笔数',90),('result','结果',100)]:

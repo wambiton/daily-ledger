@@ -156,6 +156,18 @@ class ReconciliationTests(unittest.TestCase):
         self.assertFalse(row.source_id)
         self.assertEqual(row.label,'缺少可靠订单号，请手动核对')
 
+    def test_explicit_distinct_choice_only_applies_to_matching_active_candidate(self):
+        cat=dict(id='b3e70ec0-26fa-44a7-bd19-eaa82100a650',name='餐饮',type='expense',default_key=None)
+        data=bill('2025-01-01,另一家店,支出,8.50,交易成功,123')
+        saved=dict(entry(),date='2025-01-01')
+        row=compare(data,ledger(saved))[0]
+        with self.assertRaises(ValueError):
+            supplement([row],cat,{'some-other-order'})
+        self.assertEqual(supplement([row],cat,{row.source_id})['entries'][0]['amount_fen'],850)
+        for label in ('此笔已导入','账单内订单号重复','回收站有同日同额记录','请核对交易状态','不计入收支'):
+            with self.assertRaises(ValueError):
+                supplement([row._replace(label=label)],cat,{row.source_id})
+
     def test_preview_from_picker_preserves_files(self):
         with tempfile.TemporaryDirectory() as temp:
             a,b=Path(temp)/'bill.csv',Path(temp)/'ledger.json'

@@ -26,11 +26,17 @@ class PaymentRow(NamedTuple):
 MISSING = '所选账本中未找到'
 
 
-def supplement(rows, category):
+def can_supplement(row, verified):
+    if not row.source_id:
+        return False
+    return row.label == MISSING or (row.label.startswith('同日同额 ') and row.source_id in verified)
+
+
+def supplement(rows, category, verified=frozenset()):
     if not rows or not category:
         raise ValueError('请选择已核实的漏记记录和分类。')
-    if any(not row.source_id or row.label != MISSING for row in rows):
-        raise ValueError('仅可补记有订单号、且所选账本中未找到的记录。')
+    if any(not can_supplement(row, verified) for row in rows):
+        raise ValueError('请核对候选明细，或仅选择有可靠订单号的缺失记录。')
     if len({row.source_id for row in rows}) != len(rows):
         raise ValueError('选中了重复交易。')
     now = int(time.time() * 1000)
@@ -245,14 +251,15 @@ def open_preview(parent):
     table.pack(fill='both',expand=True)
     top = ttk.Frame(window)
     top.pack(before=table,fill='x')
+    verified = set()
     missing_only = tk.BooleanVar(master=window)
     visible = list(range(len(rows)))
     def change_filter():
         nonlocal visible,page
-        visible = [i for i,row in enumerate(rows) if row.label == MISSING] if missing_only.get() else list(range(len(rows)))
+        visible = [i for i,row in enumerate(rows) if can_supplement(row, verified)] if missing_only.get() else list(range(len(rows)))
         page = 0
         render(0)
-    ttk.Checkbutton(top,text='仅看可补记的缺失候选',variable=missing_only,command=change_filter).pack(side='left')
+    ttk.Checkbutton(top,text='仅看可导出的补记候选',variable=missing_only,command=change_filter).pack(side='left')
     def show_candidates():
         selected = table.selection()
         if len(selected) != 1:
@@ -276,6 +283,16 @@ def open_preview(parent):
         for col,width in [('状态',85),('分类',90),('名称',140),('备注',300)]:
             grid.heading(col,text=col)
             grid.column(col,width=width)
+        if row.source_id and row.label.startswith('同日同额 '):
+            def verify_distinct():
+                if not messagebox.askyesno('确认是另一笔交易？',
+                        '请确认已经比对下方候选。这条支付明细将可以导出，导入手机后会新增一笔并计入统计。',
+                        parent=detail):
+                    return
+                verified.add(row.source_id)
+                detail.destroy()
+                render(0)
+            ttk.Button(detail,text='已核实为另一笔交易，允许补记',command=verify_distinct).pack(side='bottom')
         scroll = ttk.Scrollbar(section,command=grid.yview)
         grid.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y')
@@ -295,7 +312,7 @@ def open_preview(parent):
         try:
             index = selection.current()
             chosen = [rows[int(item)] for item in table.selection()]
-            payload = supplement(chosen, options[index] if index >= 0 else None)
+            payload = supplement(chosen, options[index] if index >= 0 else None, verified)
             dest = filedialog.asksaveasfilename(parent=window,title='保存为新的补记文件',defaultextension='.json',
                                                 initialfile='核实漏记.json',filetypes=[('手机补记 JSON','*.json')])
             if not dest:
@@ -318,7 +335,8 @@ def open_preview(parent):
         table.delete(*table.get_children())
         for index in visible[page*100:(page+1)*100]:
             row = rows[index]
-            table.insert('', 'end',iid=str(index),values=(row.stamp,row.merchant,row.direction,row.amount,row.label))
+            label = '已人工核实为另一笔' if row.source_id in verified else row.label
+            table.insert('', 'end',iid=str(index),values=(row.stamp,row.merchant,row.direction,row.amount,label))
         caption.set(f'显示 {len(visible)} / {len(rows)} 条 · 第 {page+1}/{max(1,(len(visible)+99)//100)} 页')
         prev.configure(state='normal' if page else 'disabled')
         nxt.configure(state='normal' if (page+1)*100<len(visible) else 'disabled')

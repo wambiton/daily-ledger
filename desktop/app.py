@@ -14,12 +14,18 @@ from pathlib import Path
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('statement', nargs='?', help='打开指定的微信或支付宝 CSV/XLSX 账单')
+    parser.add_argument('--ledger-json', help='用于只读核对的手机导出 JSON')
     parser.add_argument('--serve', action='store_true')
     parser.add_argument('--data-dir')
     parser.add_argument('--port', type=int, default=18765)
     parser.add_argument('--smoke-test', action='store_true')
     parser.add_argument('--diagnostic-file')
     args = parser.parse_args()
+    if args.ledger_json and not args.statement:
+        parser.error('--ledger-json 需要同时指定账单文件')
+    if args.statement and args.serve:
+        parser.error('账单核对需要打开窗口')
     from core import resolve_data_folder, remember_data_folder
     args.data_dir = str(resolve_data_folder(args.data_dir, sys.executable if getattr(sys,'frozen',False) else __file__))
     if args.serve:
@@ -212,6 +218,8 @@ def main():
                 stop();status.set(value)
         root.after(200,pump)
     refresh();pump()
+    if args.statement:
+        root.after_idle(lambda:open_preview(root,args.statement,args.ledger_json))
     if args.smoke_test:root.after(1500,quit_app)
     try:root.mainloop()
     finally:lock.close()

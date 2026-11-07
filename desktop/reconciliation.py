@@ -217,13 +217,13 @@ def compare_statement(csv_data, payload, indexes):
     return preview
 
 
-def open_preview(parent):
+def open_preview(parent, bill=None, ledger=None):
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
-    bill = filedialog.askopenfilename(parent=parent, title='选择已解压的微信或支付宝交易明细', filetypes=[('交易明细 CSV 或 XLSX', '*.csv *.xlsx')])
+    bill = bill or filedialog.askopenfilename(parent=parent, title='选择已解压的微信或支付宝交易明细', filetypes=[('交易明细 CSV 或 XLSX', '*.csv *.xlsx')])
     if not bill:
         return
-    ledger = filedialog.askopenfilename(parent=parent, title='选择同一日期范围的手机账本 JSON', filetypes=[('手机账本 JSON', '*.json')])
+    ledger = ledger or filedialog.askopenfilename(parent=parent, title='选择同一日期范围的手机账本 JSON', filetypes=[('手机账本 JSON', '*.json')])
     if not ledger:
         return
     try:

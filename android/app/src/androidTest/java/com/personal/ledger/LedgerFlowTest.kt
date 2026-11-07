@@ -104,6 +104,56 @@ class LedgerFlowTest {
         Assert.assertEquals("", entry.note)
     }
 
+    @androidx.test.filters.SdkSuppress(minSdkVersion = 29)
+    @Test fun systemDocumentPickerImportsDesktopSupplement() {
+        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        val bytes = instrumentation.context.assets.open("desktop-supplement.json").use { it.readBytes() }
+        val filename = "test-${UUID.randomUUID().toString().take(8)}.json"
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/json")
+            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Download/")
+        }
+        val uri = requireNotNull(app.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+        requireNotNull(app.contentResolver.openOutputStream(uri)).use { it.write(bytes) }
+        ui.onNodeWithText("我的").performClick()
+        ui.onNodeWithText("文件导入导出").performScrollTo().performClick()
+        ui.onNodeWithText("从备份文件追加导入").performScrollTo().performClick()
+        val automation = instrumentation.uiAutomation
+        val deadline = android.os.SystemClock.uptimeMillis() + 15000
+        var selected = false
+        var openedFiles = false
+        var openedDownloads = false
+        fun click(node: android.view.accessibility.AccessibilityNodeInfo?): Boolean {
+            var clickable = node
+            while (clickable != null && !clickable.isClickable) clickable = clickable.parent
+            return clickable?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK) == true
+        }
+        while (!selected && android.os.SystemClock.uptimeMillis() < deadline) {
+            val root = automation.rootInActiveWindow
+            val node = root?.findAccessibilityNodeInfosByText(filename)?.firstOrNull()
+            if (node != null) {
+                selected = click(node)
+            } else if (root?.packageName?.toString() == "com.coloros.filemanager") {
+                if (!openedFiles) {
+                    openedFiles = click(root.findAccessibilityNodeInfosByText("文件").firstOrNull { it.text?.toString() == "文件" })
+                } else if (!openedDownloads) {
+                    openedDownloads = click(root.findAccessibilityNodeInfosByText("下载").firstOrNull { it.text?.toString() == "下载" })
+                }
+            }
+            if (!selected) android.os.SystemClock.sleep(200)
+        }
+        Assert.assertTrue("Synthetic file was not selectable in the system document picker", selected)
+        ui.waitUntil(10000) { !vm.busy.value && vm.importPreview.value != null }
+        Assert.assertEquals(1, vm.importPreview.value!!.normal)
+        ui.onNodeWithText("确认导入").performClick()
+        ui.waitUntil(10000) { !vm.busy.value && vm.entries.value.size == 1 }
+        Assert.assertEquals(850L, vm.entries.value.single().amountFen)
+        Assert.assertEquals("微信 · 模拟早餐", vm.entries.value.single().note)
+        Assert.assertArrayEquals(bytes, requireNotNull(app.contentResolver.openInputStream(uri)).use { it.readBytes() })
+        // Retain the clearly named synthetic download and isolated database for inspection.
+    }
+
     @Test fun desktopSupplementPreviewPreservesExistingEntries() {
         val category = vm.categories.value.first { it.type == "expense" }
         ui.runOnIdle { vm.save(null, "expense", category.id, "2.00", Rules.today().toString(), "synthetic-existing") {} }

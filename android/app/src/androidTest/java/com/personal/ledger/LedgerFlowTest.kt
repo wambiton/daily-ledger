@@ -104,6 +104,41 @@ class LedgerFlowTest {
         Assert.assertEquals("", entry.note)
     }
 
+    @Test fun desktopSupplementPreviewPreservesExistingEntries() {
+        val category = vm.categories.value.first { it.type == "expense" }
+        ui.runOnIdle { vm.save(null, "expense", category.id, "2.00", Rules.today().toString(), "synthetic-existing") {} }
+        ui.waitUntil(10000) { !vm.busy.value && vm.entries.value.size == 1 }
+        val original = vm.entries.value.single()
+        val source = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().context.assets
+            .open("desktop-supplement.json").use { it.readBytes() }
+        val file = java.io.File(app.cacheDir, "desktop-preview-${UUID.randomUUID()}.json")
+        file.writeBytes(source)
+        ui.onNodeWithText("我的").performClick()
+        ui.onNodeWithText("文件导入导出").performScrollTo().performClick()
+        fun preview() {
+            ui.runOnIdle { vm.readImport(android.net.Uri.fromFile(file)) }
+            ui.waitUntil(10000) { !vm.busy.value && vm.importPreview.value != null }
+        }
+        preview()
+        Assert.assertEquals(0, vm.importPreview.value!!.duplicates)
+        ui.onNodeWithText("确认导入").performClick()
+        ui.waitUntil(10000) { !vm.busy.value && vm.entries.value.size == 2 }
+        Assert.assertTrue(vm.entries.value.contains(original))
+        Assert.assertEquals(1050L, vm.entries.value.sumOf { it.amountFen })
+        preview()
+        Assert.assertEquals(1, vm.importPreview.value!!.duplicates)
+        ui.onNodeWithText("跳过重复并导入").performClick()
+        ui.waitUntil(10000) { !vm.busy.value && vm.importPreview.value == null }
+        Assert.assertEquals(2, vm.entries.value.size)
+        preview()
+        ui.onNodeWithText("仍然导入重复项").performClick()
+        ui.waitUntil(10000) { !vm.busy.value && vm.entries.value.size == 3 }
+        Assert.assertEquals(1900L, vm.entries.value.sumOf { it.amountFen })
+        Assert.assertTrue(vm.entries.value.contains(original))
+        Assert.assertArrayEquals(source, file.readBytes())
+        // Retain this synthetic input and isolated ledger for inspection.
+    }
+
     @Test fun fileRangeExportAndDuplicateImportPreview() {
         val day = Rules.today().toString()
         val previous = Rules.today().minusDays(1).toString()

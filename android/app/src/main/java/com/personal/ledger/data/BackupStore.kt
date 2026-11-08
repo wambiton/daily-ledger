@@ -33,7 +33,8 @@ class BackupStore(private val db: LedgerDatabase, private val owner: String) {
     }
     class DuplicateImport(val count: Int): IllegalArgumentException("已有${count}笔本机账目重复导入")
 
-    data class Preview(val normal: Int, val trash: Int, val duplicates: Int, val expired: Int)
+    data class Preview(val normal: Int, val trash: Int, val duplicates: Int, val expired: Int,
+        val from: String?, val to: String?, val incomeFen: Long, val expenseFen: Long)
     suspend fun duplicateIds(payload: JSONObject): Set<String> = db.withTransaction {
         val known = dao.importedSources(owner).toSet() + dao.allEntries(owner).map { it.id }
         PortableSnapshot.parse(payload,owner).entries.filter { it.id in known }.map { it.id }.toSet()
@@ -42,8 +43,12 @@ class BackupStore(private val db: LedgerDatabase, private val owner: String) {
         val parsed = PortableSnapshot.parse(payload, owner)
         val retained = parsed.retained(System.currentTimeMillis())
         val known = dao.importedSources(owner).toSet() + dao.allEntries(owner).map { it.id }
+        val active = retained.filter { it.deletedAt == null }
         Preview(retained.count { it.deletedAt == null }, retained.count { it.deletedAt != null },
-            retained.count { it.id in known }, parsed.entries.size - retained.size)
+            retained.count { it.id in known }, parsed.entries.size - retained.size,
+            active.minOfOrNull { it.date }, active.maxOfOrNull { it.date },
+            active.filter { it.type == "income" }.sumOf { it.amountFen },
+            active.filter { it.type == "expense" }.sumOf { it.amountFen })
     }
     suspend fun importLocal(payload: JSONObject, allowDuplicates: Boolean = false): Int =
         append(payload, if(allowDuplicates) "include" else "confirm")

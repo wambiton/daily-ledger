@@ -3,6 +3,8 @@ package com.personal.ledger.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -33,7 +35,13 @@ fun FileToolsScreen(vm: LedgerViewModel, busy: Boolean) {
     message?.let {Text(it)}
     preview?.let { p ->
         AlertDialog(onDismissRequest={if(!busy) vm.cancelImport()},title={Text("确认追加导入")},
-            text={Text("正常账目：${p.normal}笔\n回收站：${p.trash}笔\n其中重复：${p.duplicates}笔\n过期回收站：${p.expired}笔（自动跳过）\n\n保留现有账目；继续导入重复项会新增独立账目，正常账目都计入统计。")},
+            text={Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("文件内正常账目汇总")
+                Text(if(p.from == null) "无正常账目" else "日期：${p.from} 至 ${p.to}")
+                Text("收入 ¥${Rules.money(p.incomeFen)} · 支出 ¥${Rules.money(p.expenseFen)}")
+                Text("汇总包含文件内重复项，不含回收站；跳过重复时，实际追加金额可能更少。")
+                Text("正常账目：${p.normal}笔\n回收站：${p.trash}笔\n其中重复：${p.duplicates}笔\n过期回收站：${p.expired}笔（自动跳过）\n\n保留现有账目；继续导入重复项会新增独立账目，正常账目都计入统计。")
+            }},
             confirmButton={Column {
                 TextButton(onClick={vm.confirmImport(false)},enabled=!busy) {Text(if(p.duplicates>0) "跳过重复并导入" else "确认导入")}
                 if(p.duplicates>0) TextButton(onClick={vm.confirmImport(true)},enabled=!busy) {Text("仍然导入重复项")}

@@ -171,6 +171,8 @@ class LedgerFlowTest {
         }
         preview()
         Assert.assertEquals(0, vm.importPreview.value!!.duplicates)
+        ui.onNodeWithText("收入 ¥0.00 · 支出 ¥8.50").assertExists()
+        ui.onNodeWithText("日期：2025-01-01 至 2025-01-01").assertExists()
         ui.onNodeWithText("确认导入").performClick()
         ui.waitUntil(10000) { !vm.busy.value && vm.entries.value.size == 2 }
         Assert.assertTrue(vm.entries.value.contains(original))

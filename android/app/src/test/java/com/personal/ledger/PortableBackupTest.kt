@@ -46,6 +46,25 @@ class PortableBackupTest {
         assertEquals(1700L, db.ledger().entrySnapshot("desktop-test").sumOf { it.amountFen })
         assertEquals(0, BackupStore(db,"other").preview(payload).duplicates)
     }
+    @Test fun previewSummaryExcludesTrashAndKeepsFileTotalsForDuplicates() = runBlocking {
+        val payload = payload()
+        val store = BackupStore(db,"summary")
+        val before = store.preview(payload)
+        assertEquals("2025-01-01", before.from)
+        assertEquals(before.from, before.to)
+        assertEquals(1234L, before.incomeFen + before.expenseFen)
+        store.append(payload,"include")
+        val repeated = store.preview(payload)
+        assertEquals(2, repeated.duplicates)
+        assertEquals(before.incomeFen, repeated.incomeFen)
+        assertEquals(before.expenseFen, repeated.expenseFen)
+        payload.put("entries", org.json.JSONArray().put(trashRow(payload)))
+        val onlyTrash = store.preview(payload)
+        assertNull(onlyTrash.from)
+        assertNull(onlyTrash.to)
+        assertEquals(0L, onlyTrash.incomeFen + onlyTrash.expenseFen)
+    }
+
     private fun trashRow(payload: JSONObject): JSONObject {
         val rows = payload.getJSONArray("entries")
         return (0 until rows.length()).map {rows.getJSONObject(it)}.single {!it.isNull("deleted_at")}

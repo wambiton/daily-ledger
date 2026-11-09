@@ -26,13 +26,21 @@ class AutoRecoveryFlowTest {
         val holder = ViewModelStore()
         val ledger = LedgerViewModel(app,name,owner).also { holder.put("ledger",it) }
         val vm = AutoEntryViewModel(app).also { holder.put("auto",it) }
+        val childId = UUID.randomUUID().toString()
         try {
             val root = runBlocking {
                 LedgerRepository(db,owner).seedDefaults()
+                val category = db.ledger().categorySnapshot(owner).first {it.type=="expense"}
+                NamingRuleStore(db,name,owner).save(SmartNamingRule(UUID.randomUUID().toString(),name,owner,
+                    "模拟恢复交易",category.id,channel="支付宝",allowAutomatic=true))
                 val n = PaymentNotice(UUID.randomUUID().toString(),"支付宝",Rules.today().toString(),850,"expense","模拟恢复商户","模拟测试",false,false,false,transactionAt=System.currentTimeMillis(),channel="支付宝")
                 val c = PaymentCandidate(n.id,name,owner,"独立恢复测试",n.platform,n.date,n.amountFen,n.type,n.merchant,n.note,false,"pending","")
                 val received = requireNotNull(processor.receive(n,c,db))
+                val sms = n.copy(id=childId,platform="招商银行短信",source="sms")
+                val linked = requireNotNull(processor.receive(sms,c.copy(id=childId,platform=sms.platform),db))
+                assertEquals("linked",linked.status)
                 processor.ignore(received.id)
+                assertEquals("ignored",inbox.auto().candidate(childId)!!.status)
                 received
             }
             ui.setContent { LedgerTheme { AutoEntryScreen(ledger,vm) } }
@@ -51,11 +59,17 @@ class AutoRecoveryFlowTest {
             ui.onAllNodesWithText("恢复到待确认").onLast().performClick()
             ui.waitUntil(10000) { !vm.busy.value && vm.rows.value.any {it.id==root.id && it.status=="pending"} }
             assertTrue(runBlocking {db.ledger().entrySnapshot(owner).isEmpty()})
+            assertEquals("linked",runBlocking {inbox.auto().candidate(childId)!!.status})
             runBlocking {
                 val category = db.ledger().categorySnapshot(owner).first {it.type=="expense"}
                 processor.confirm(inbox.auto().candidate(root.id)!!,db,category.id,"expense","8.50",root.date,"模拟确认",false)
             }
             ui.waitUntil(10000) { vm.rows.value.any {it.id==root.id && it.status=="booked"} }
+            runBlocking {
+                assertEquals("merged",inbox.auto().candidate(childId)!!.status)
+                assertEquals(inbox.auto().candidate(root.id)!!.entryId,inbox.auto().candidate(childId)!!.entryId)
+                assertEquals(1,db.ledger().entrySnapshot(owner).size)
+            }
             ui.onNodeWithTag("auto-list").performScrollToNode(hasText("已处理记录"))
             ui.onNodeWithText("已处理记录").performClick()
             fun openRevoke() {
@@ -72,6 +86,10 @@ class AutoRecoveryFlowTest {
                 assertTrue(db.ledger().entrySnapshot(owner).isEmpty())
                 assertNotNull(db.ledger().allEntries(owner).single().deletedAt)
                 assertNotNull(inbox.auto().candidate(root.id))
+                assertEquals("revoked",inbox.auto().candidate(childId)!!.status)
+                val backup = BackupStore(db,owner).export()
+                assertEquals(1,backup.getJSONArray("entries").length())
+                assertFalse(backup.getJSONArray("entries").getJSONObject(0).isNull("deleted_at"))
             }
             assertNull(vm.error.value)
         } finally {

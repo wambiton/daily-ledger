@@ -75,15 +75,17 @@ class LedgerViewModel @JvmOverloads constructor(application: Application, val da
     fun readImport(uri: Uri?) {
         if(uri == null) return
         runAction {
-            importPayload = null; importPreview.value = null
+            importPayload = null; importPreview.value = null; fileMessage.value = null
             val payload = withContext(Dispatchers.IO) {
-                val bytes = requireNotNull(getApplication<Application>().contentResolver.openInputStream(uri)).use { input ->
-                    val out = java.io.ByteArrayOutputStream(); val chunk = ByteArray(8192)
-                    while(true) { val n=input.read(chunk); if(n < 0) break
-                        require(out.size()+n <= 20*1024*1024) { "备份文件不能超过20MB" }; out.write(chunk,0,n) }
-                    out.toByteArray()
+                try {
+                    requireNotNull(getApplication<Application>().contentResolver.openInputStream(uri)) {
+                        "无法读取所选文件，请重新选择已下载到手机的备份JSON"
+                    }.use { ImportFile.read(it) }
+                } catch (_: SecurityException) {
+                    throw IllegalArgumentException("文件访问权限已失效，请重新选择备份JSON")
+                } catch (_: java.io.IOException) {
+                    throw IllegalArgumentException("文件读取失败，请确认文件已下载完成，再重新选择")
                 }
-                JSONObject(bytes.toString(Charsets.UTF_8).removePrefix("\uFEFF"))
             }
             val preview = BackupStore(db,owner).preview(payload)
             importPayload = payload; importPreview.value = preview

@@ -154,6 +154,25 @@ class LedgerFlowTest {
         // Retain the clearly named synthetic download and isolated database for inspection.
     }
 
+    @Test fun wrongImportFileClearsOldSuccessAndPreservesLedger() {
+        val category = vm.categories.value.first { it.type == "expense" }
+        ui.runOnIdle { vm.save(null,"expense",category.id,"2.00",Rules.today().toString(),"synthetic-preserved") {} }
+        ui.waitUntil(10000) { !vm.busy.value && vm.entries.value.size==1 }
+        val before = vm.entries.value.toList()
+        val file = java.io.File(app.cacheDir,"invalid-import-${UUID.randomUUID()}.json")
+        file.writeText("PK\u0003\u0004synthetic-zip")
+        ui.runOnIdle {
+            vm.fileMessage.value="旧导入成功提示"
+            vm.readImport(android.net.Uri.fromFile(file))
+        }
+        ui.waitUntil(10000) { !vm.busy.value && vm.error.value!=null }
+        Assert.assertTrue(vm.error.value!!.contains("Excel或压缩包"))
+        Assert.assertNull(vm.fileMessage.value)
+        Assert.assertNull(vm.importPreview.value)
+        Assert.assertEquals(before,vm.entries.value)
+        Assert.assertEquals("PK\u0003\u0004synthetic-zip",file.readText())
+    }
+
     @Test fun desktopSupplementPreviewPreservesExistingEntries() {
         val category = vm.categories.value.first { it.type == "expense" }
         ui.runOnIdle { vm.save(null, "expense", category.id, "2.00", Rules.today().toString(), "synthetic-existing") {} }

@@ -9,10 +9,17 @@ import tempfile
 import time
 import urllib.request
 import uuid
+import argparse
+import re
+import queue
+import threading
 from test_external_device import ROOT, seed, identity
 
 
 def main():
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--public',action='store_true',help='Require cellular transport and use a public HTTPS tunnel')
+    public=parser.parse_args().public
     folder=Path(tempfile.mkdtemp(dir=ROOT/'reports/private',prefix='packaged-rules-device-'))
     email='rules-'+uuid.uuid4().hex+'@qq.com'
     other='other-'+uuid.uuid4().hex+'@qq.com'
@@ -38,6 +45,7 @@ User.objects.create_user(username='isolated-other',email=sys.argv[2],password='1
     adb=str(ROOT/'.tools/android-sdk/platform-tools/adb.exe')
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
     forwarded=False
+    tunnel=None
     try:
         for _ in range(60):
             if process.poll() is not None:raise RuntimeError('Packaged service exited')
@@ -47,9 +55,29 @@ User.objects.create_user(username='isolated-other',email=sys.argv[2],password='1
                 assert 5 in health['backup_formats'];break
             except OSError:time.sleep(.25)
         else:raise RuntimeError('Packaged service readiness timeout')
-        subprocess.run([adb,'reverse',f'tcp:{port}',f'tcp:{port}'],check=True,capture_output=True);forwarded=True
+        endpoint=f'http://127.0.0.1:{port}'
+        if public:
+            tunnel=subprocess.Popen([str(ROOT/'.tools/cloudflared.exe'),'tunnel','--no-autoupdate','--protocol','http2',
+                '--http-host-header','localhost','--url',endpoint],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,creationflags=subprocess.CREATE_NO_WINDOW)
+            lines=queue.Queue()
+            def drain():
+                for line in tunnel.stdout: lines.put(line.decode(errors='replace'))
+            threading.Thread(target=drain,daemon=True).start()
+            deadline=time.monotonic()+90
+            address=None
+            while time.monotonic()<deadline:
+                try: line=lines.get(timeout=1)
+                except queue.Empty: continue
+                match=re.search(r'https://[a-z0-9-]+\.trycloudflare\.com',line)
+                if match: address=match.group()
+                if address and 'Registered tunnel connection' in line:
+                    endpoint=address;break
+            else: raise RuntimeError('Public HTTPS tunnel was not ready within 90 seconds')
+            print('Public HTTPS tunnel ready; device must use cellular',flush=True)
+        else:
+            subprocess.run([adb,'reverse',f'tcp:{port}',f'tcp:{port}'],check=True,capture_output=True);forwarded=True
         command=[adb,'shell','am','instrument','-w','-e','class','com.personal.ledger.PackagedRulesBackupTest',
-            '-e','packaged_server',f'http://127.0.0.1:{port}','-e','packaged_pair',computer['pair_key'],
+            '-e','packaged_server',endpoint,'-e','require_cellular',str(public).lower(),'-e','packaged_pair',computer['pair_key'],
             '-e','packaged_email',email,'-e','packaged_other_email',other,
             'com.personal.ledger.test/androidx.test.runner.AndroidJUnitRunner']
         result=subprocess.run(command,capture_output=True,timeout=180)
@@ -57,9 +85,12 @@ User.objects.create_user(username='isolated-other',email=sys.argv[2],password='1
         (folder/'device-result.txt').write_text(output,encoding='utf-8')
         print(output)
         if result.returncode or 'OK (1 test)' not in output or 'FAILURES' in output:raise RuntimeError('Packaged rules device test failed')
-        print('PHONE_TO_PACKAGED_V5_HISTORY_TRUST_AND_ACCOUNT_ISOLATION_OK')
+        print(('CELLULAR_HTTPS_' if public else 'USB_')+'PHONE_TO_PACKAGED_V5_HISTORY_TRUST_AND_ACCOUNT_ISOLATION_OK')
         print('Retained fixture:',folder.relative_to(ROOT))
     finally:
+        if tunnel is not None:
+            if tunnel.poll() is None:tunnel.terminate()
+            tunnel.wait(timeout=10)
         if forwarded:subprocess.run([adb,'reverse','--remove',f'tcp:{port}'],capture_output=True)
         if process.poll() is None:process.terminate()
         process.wait(timeout=10)

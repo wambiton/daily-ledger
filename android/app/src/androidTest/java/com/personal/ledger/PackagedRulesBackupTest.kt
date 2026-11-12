@@ -17,7 +17,27 @@ class PackagedRulesBackupTest {
         val args=InstrumentationRegistry.getArguments()
         require(args.containsKey("packaged_server"))
         val app=ApplicationProvider.getApplicationContext<Context>()
+        fun checkTransport() {
+            if(args.getString("require_cellular")=="true") {
+                val manager=app.getSystemService(android.net.ConnectivityManager::class.java)
+                val caps=manager.getNetworkCapabilities(manager.activeNetwork)
+                assertTrue("Mobile data must be the active transport",caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)==true)
+                assertFalse("VPN transport must not mask this acceptance",caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)==true)
+            }
+        }
+        checkTransport()
         val client=BackupClient(args.getString("packaged_server")!!,args.getString("packaged_pair"))
+        if(args.getString("require_cellular")=="true") {
+            var ready=false
+            var last: java.io.IOException?=null
+            for(attempt in 0 until 12) {
+                checkTransport()
+                try {client.call("health/");ready=true;break}
+                catch(error: java.io.IOException) {last=error}
+                if(attempt<11) kotlinx.coroutines.delay(5000)
+            }
+            if(!ready) throw requireNotNull(last)
+        }
         suspend fun login(email: String)=client.call("auth/login/",JSONObject().put("email",email).put("password","12345678"))
         val account=login(args.getString("packaged_email")!!)
         val token=account.getString("access_token")
@@ -61,6 +81,7 @@ class PackagedRulesBackupTest {
             assertEquals(0,client.call("backup/history/",token=other).getJSONArray("items").length())
             val error=runCatching {client.call("backup/download/?revision=1",token=other)}.exceptionOrNull()
             assertTrue(error is BackupApiException && error.status==404)
+            checkTransport()
         } finally {LedgerDatabases.release(name)}
     }
 }

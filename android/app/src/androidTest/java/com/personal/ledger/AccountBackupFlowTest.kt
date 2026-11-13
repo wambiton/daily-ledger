@@ -23,6 +23,26 @@ import java.util.UUID
 
 class AccountBackupFlowTest {
     @get:Rule val ui = createComposeRule()
+    @Test fun realMailRequestsFromRegisterAndResetScreens() {
+        val args = InstrumentationRegistry.getArguments()
+        Assume.assumeTrue(args.containsKey("mail_recipient") && args.containsKey("mail_server"))
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val vm = BackupViewModel(app, "mail-test-${UUID.randomUUID()}")
+        val holder = ViewModelStore().apply { put("vm", vm) }
+        try {
+            ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AccountScreen(vm) } } }
+            ui.onNodeWithTag("server-address").performScrollTo().performTextReplacement(args.getString("mail_server")!!)
+            ui.onNodeWithTag("account-email").performScrollTo().performTextReplacement(args.getString("mail_recipient")!!)
+            for (mode in listOf("register", "reset")) {
+                ui.onNodeWithTag("auth-mode-$mode").performScrollTo().performClick()
+                ui.runOnIdle { vm.message.value = "" }
+                ui.onNodeWithText("发送验证码").performScrollTo().performClick()
+                ui.waitUntil(45000) { !vm.busy.value && vm.message.value.isNotEmpty() }
+                assertTrue(vm.message.value, vm.message.value.startsWith("验证码已发送"))
+                assertNull(vm.account.value)
+            }
+        } finally { holder.clear() }
+    }
     // Interrupted device runs must not leave synthetic retries competing with later tests.
     // Only explicitly named UUID test jobs are cancelled; ledger files are retained.
     @Before @After fun cancelInterruptedSyntheticUploads() {

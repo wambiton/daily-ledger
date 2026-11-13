@@ -214,7 +214,12 @@ class AccountBackupFlowTest {
             ui.waitUntil(30000) { !vm.busy.value }
             assertTrue(vm.message.value,vm.message.value.startsWith("密码已重置"))
             ui.onNodeWithTag("auth-mode-login").performScrollTo().performClick()
-            ui.onNodeWithTag("account-password").performScrollTo().performTextInput("new-12345678")
+            ui.onNodeWithTag("account-password").performScrollTo().performTextInput("old-12345678")
+            ui.onNodeWithTag("account-submit").performScrollTo().performClick()
+            ui.waitUntil(30000) { !vm.busy.value }
+            assertNull(vm.account.value)
+            assertTrue(vm.message.value, vm.message.value.contains("邮箱或密码错误"))
+            ui.onNodeWithTag("account-password").performScrollTo().performTextReplacement("new-12345678")
             ui.onNodeWithTag("toggle-password").performScrollTo().performClick()
             assertFalse(ui.onNodeWithTag("account-password").fetchSemanticsNode().config.contains(SemanticsProperties.Password))
             ui.onNodeWithTag("account-submit").performScrollTo().performClick()
@@ -381,7 +386,12 @@ class AccountBackupFlowTest {
                 repo.delete(trash.id)
             }
             ui.setContent { LedgerTheme { Column(Modifier.verticalScroll(rememberScrollState())) { AccountScreen(vm) } } }
-            ui.runOnIdle { vm.signIn("http://127.0.0.1:8767", args.getString("register_email")!!,"12345678",args.getString("register_code")!!,"register") }
+            ui.onNodeWithTag("auth-mode-register").performScrollTo().performClick()
+            ui.onNodeWithTag("server-address").performScrollTo().performTextReplacement("http://127.0.0.1:8767")
+            ui.onNodeWithTag("account-email").performScrollTo().performTextInput(args.getString("register_email")!!)
+            ui.onNodeWithTag("account-password").performScrollTo().performTextInput("12345678")
+            ui.onNodeWithTag("account-code").performScrollTo().performTextInput(args.getString("register_code")!!)
+            ui.onNodeWithTag("account-submit").performScrollTo().performClick()
             ui.waitUntil(30000) { !vm.busy.value && !vm.uploading.value }
             assertNotNull(vm.message.value,vm.account.value)
             val account = vm.account.value!!
@@ -427,7 +437,7 @@ class AccountBackupFlowTest {
             } finally { LedgerDatabases.release(accountName) }
         } finally {
             holder.clear(); LedgerDatabases.release(local)
-            accountName?.let { app.deleteDatabase(it) }; AccountVault(app,namespace).clear()
+            // Retain isolated account and source databases for post-test inspection.
         }
     }
 

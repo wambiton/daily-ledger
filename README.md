@@ -10,7 +10,7 @@
 [**下载试用**](#下载安装) · [**看界面**](#界面预览) · [**提建议**](#你的一条反馈就能帮助改进)
 
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
-![Version](https://img.shields.io/badge/试用版-0.7.14-4775D1)
+![Version](https://img.shields.io/badge/试用版-0.7.15-4775D1)
 
 </div>
 
@@ -62,7 +62,7 @@ Daily Ledger 尝试把这些可识别的支付信息整理进同一个账本：*
 3. 之后同一商户再次符合你已授权的明确规则时，按实际金额自动入账。
 4. 记错了可以修改或撤销，撤销后的账目进入回收站；模糊匹配继续由你核对。
 
-**能识别到消息，才有机会自动记账。** 微信、支付宝应用内有账单，不代表手机一定收到了系统通知；没有通知或短信的消费可能漏记，目前还没有账单对账补漏功能。银行短信目前主要适配招商银行95555模板。
+**能识别到消息，才有机会自动记账。** 微信、支付宝应用内有账单，不代表手机一定收到了系统通知；没有通知或短信的消费可能漏记，可在电脑端导入微信/支付宝 CSV 或 XLSX 与手机导出 JSON 核对，经人工确认后生成补记文件。银行短信目前主要适配招商银行95555模板。
 
 ## 适合谁先试试
 
@@ -74,22 +74,23 @@ Daily Ledger 尝试把这些可识别的支付信息整理进同一个账本：*
 
 ## 下载安装
 
-**当前配套试用版：手机 0.7.14 + 电脑 0.7.14。** 可以先安装手机体验手动记账，再按需要配置电脑备份。
+**当前配套试用版：手机 0.7.15 + 电脑 0.7.15。** 可以先安装手机体验手动记账，再按需要配置电脑备份。
 
 | 平台 | 下载 | 版本与安装方式 |
 | :--- | :--- | :--- |
-| Android 手机 | [下载手机 APK](https://github.com/wambiton/daily-ledger/releases/download/v0.7.14/PersonalLedger-Android-0.7.14.apk) | 0.7.14 · Android 8.0 及以上；已有用户覆盖安装 |
-| Windows 电脑 | [下载电脑端 ZIP](https://github.com/wambiton/daily-ledger/releases/download/v0.7.14/PersonalLedger-Windows-0.7.14.zip) | 0.7.14 · 完整解压后运行 `LedgerBackup.exe` |
+| Android 手机 | [下载手机 APK](https://github.com/wambiton/daily-ledger/releases/download/v0.7.15/PersonalLedger-Android-0.7.15.apk) | 0.7.15 · Android 8.0 及以上；已有用户覆盖安装 |
+| Windows 电脑 | [下载电脑端 ZIP](https://github.com/wambiton/daily-ledger/releases/download/v0.7.15/PersonalLedger-Windows-0.7.15.zip) | 0.7.15 · 完整解压后运行 `LedgerBackup.exe` |
+| 完整试用包 | [两端软件＋全部说明](https://github.com/wambiton/daily-ledger/releases/download/v0.7.15/PersonalLedger-Trial-0.7.15.zip) | 适合一次下载或分享给试用者 |
 
-[查看发布页与全部附件](https://github.com/wambiton/daily-ledger/releases/tag/v0.7.14) · [安装说明](https://github.com/wambiton/daily-ledger/releases/download/v0.7.14/INSTALL.md) · [SHA-256 校验文件](https://github.com/wambiton/daily-ledger/releases/download/v0.7.14/SHA256SUMS.txt)
+[查看发布页与全部附件](https://github.com/wambiton/daily-ledger/releases/tag/v0.7.15) · [安装说明](https://github.com/wambiton/daily-ledger/releases/download/v0.7.15/INSTALL.md) · [SHA-256 校验文件](https://github.com/wambiton/daily-ledger/releases/download/v0.7.15/SHA256SUMS.txt)
 
-> 当前为试用发布，手机 APK 使用调试签名。手机 0.7.14 与电脑 0.7.14 是本次配套组合。升级请保留原有数据，不要先卸载手机应用；电脑 ZIP 中的 `_internal` 文件夹必须与 EXE 一起保留。银行短信支持已适配的招商银行95555模板；只处理开启后的新消息。
+> 当前为试用发布，手机 APK 使用调试签名。手机 0.7.15 与电脑 0.7.15 是本次配套组合。升级请保留原有数据，不要先卸载手机应用；电脑 ZIP 中的 `_internal` 文件夹必须与 EXE 一起保留。银行短信支持已适配的招商银行95555模板；只处理开启后的新消息。
 
 ### 第一次体验
 
 1. 用几笔模拟账目试试记账、日历、比较和预算。
 2. 想体验自动记账时，在应用内指定账本并设置所需权限；无需为了测试额外消费。
-3. 有备份需求时，按 [安装说明](https://github.com/wambiton/daily-ledger/releases/download/v0.7.14/INSTALL.md) 配置电脑，确认界面明确显示本次备份成功。
+3. 有备份需求时，按 [安装说明](https://github.com/wambiton/daily-ledger/releases/download/v0.7.15/INSTALL.md) 配置电脑，确认界面明确显示本次备份成功。
 
 QQ邮箱用于账号和验证码，**账目不保存在QQ邮箱里**。换手机只能找回已经成功上传到对应电脑的记录；“手机已保存”不等于“电脑备份成功”。完整步骤见 [备份使用说明](docs/电脑端外网备份使用说明.md)。
 
@@ -118,11 +119,11 @@ QQ邮箱用于账号和验证码，**账目不保存在QQ邮箱里**。换手机
 
 ## 当前版本与下一步
 
-**0.7.14 是试用版。** 手机与电脑配套支持智能命名规则备份。发布前已通过108项电脑端业务测试、41项服务端测试、6项电脑端测试，以及实际电脑程序的重启和备份专项。
+**0.7.15 是试用版。** 包含账单对账补漏、手机导入预览与校验，以及最新账号和备份验收记录。已验证手机流量 HTTPS 备份、真实验证码收信、手机注册和改密，以及电脑服务重启后的账号与备份保持。
 
-新增通知操作仍待本轮真机锁屏、后台唤醒验证；公网连接和其他机型也未重新全面验收。测试通过不等于覆盖所有真实支付场景。具体执行日期与范围见 [开发进度](开发进度.md)。
+自动记账依赖可识别的通知、短信及后台权限，可能漏记。第二台物理手机、其他品牌机型和其他 Windows 电脑尚未完成验收。测试通过不等于覆盖所有真实支付场景。具体执行日期与范围见 [开发进度](开发进度.md)。
 
-接下来重点是完善通知体验、增加经验证的银行模板，以及实现账单对账补漏。欢迎通过上方反馈入口告诉我，哪一项最影响你的使用。
+目前暂停新增功能，优先收集试用反馈并修复问题。欢迎通过上方反馈入口描述复现步骤，请勿提交真实账单、密码或授权码。
 
 ## 想了解实现或从源码运行
 
